@@ -1,0 +1,9 @@
+This is a standalone Language ID tool.
+
+The design principles are as follows:
+
+1) Fast
+2) Make use of multicore where possible
+3) Single .py file
+4) Deployable as a web service
+5) Training is not our problem
