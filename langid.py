@@ -47,14 +47,13 @@ def tokenize(instance, feature_space):
     else:
       unaligned[token] += 1
 
-  unaligned = array.array('L', unaligned.itervalues())
-  return aligned, unaligned
+  penalty = sum(unaligned.values())
+  return aligned, penalty 
 
-def skew(p, q, a=0.99):
+def skew(p, q, a=0.99, penalty=0):
   """
   Skew divergence between two iterables p and q. 
   p and q are assumed to be frequency counts
-  TODO: Check for overflows??
   """
   sum_p = sum(p)
   sum_ratio = float(sum_p) / sum(q)
@@ -70,21 +69,14 @@ def skew(p, q, a=0.99):
         acc_a += p[i] * log( p[i] / r )
       else:
         acc_b += p[i]
-  return ( acc_a + k * acc_b ) / sum_p
-
-  retval = 0.
-  for i in xrange(len(q)):
-    if r[i] > 0:
-      s = a * q[i] + (1-a) * r[i]
-      retval += r[i] * log(r[i] / s) 
-  return retval
+  return ( acc_a + k * (acc_b + penalty) ) / sum_p
 
 def classify(instance):
   """
   Classify an instance.
   """
-  fv, penalty = tokenize(instance, feature_space)
-  distances = [ skew(m, fv) for m in class_models ]
+  fv, p = tokenize(instance, feature_space)
+  distances = [ skew(m, fv, penalty=p) for m in class_models ]
   pairs = sorted(zip(distances, class_space))
   dist, pred = pairs[0]
   maxdist = pairs[-1][0]
