@@ -1,5 +1,6 @@
 # langid.py
 # Marco Lui, Feb 2011
+
 import itertools
 import array
 import base64
@@ -88,10 +89,9 @@ def classify(instance):
   dist, pred = pairs[0]
   maxdist = pairs[-1][0]
   conf = 1 - dist / maxdist
-  print 'min:',dist,'max:',maxdist
   return pred, conf
 
-def langid_service(environ, start_response):
+def application(environ, start_response):
   """
   WSGI-compatible langid web service.
   """
@@ -137,7 +137,7 @@ def langid_service(environ, start_response):
 
 if __name__ == "__main__":
   print "Serve Forever - Ctrl+C to exit"
-  httpd = make_server('', 8080, langid_service)
+  httpd = make_server('', 8080, application)
   httpd.serve_forever()
 
 
