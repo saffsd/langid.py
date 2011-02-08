@@ -83,6 +83,19 @@ def classify(instance):
   conf = 1 - dist / maxdist
   return pred, conf
 
+query_form = """
+<html>
+<head>
+<title>Language Identifier</title>
+</head>
+<body>
+<form method=post>
+<textarea name="q" cols=40 rows=6></textarea></br>
+<input type=submit value="submit">
+</form>
+</body>
+</html>
+"""
 def application(environ, start_response):
   """
   WSGI-compatible langid web service.
@@ -98,8 +111,14 @@ def application(environ, start_response):
       try:
         data = parse_qs(environ['QUERY_STRING'])['q'][0]
       except KeyError:
-        # TODO handle nicely
-        raise
+        # No query, so we display a query interface instead
+        # TODO: Detect if this is coming from a browser!
+        status = '200 OK' # HTTP Status
+        headers = [('Content-type', 'text/html; charset=utf-8')] # HTTP Headers
+        start_response(status, headers)
+        return [query_form]
+    elif environ['REQUEST_METHOD'] == 'POST':
+      data = environ['wsgi.input'].read(int(environ['CONTENT_LENGTH']))
     else:
       # Unsupported method
       status = '405 Method Not Allowed' # HTTP Status
