@@ -206,7 +206,10 @@ if __name__ == "__main__":
     print "Listening on %s:%d" % (options.host, options.port)
     print "Press Ctrl+C to exit"
     httpd = make_server(options.host, options.port, application)
-    httpd.serve_forever()
+    try:
+      httpd.serve_forever()
+    except KeyboardInterrupt:
+      pass
   else:
     while True:
       try:
