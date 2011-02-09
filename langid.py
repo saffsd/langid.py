@@ -216,8 +216,3 @@ if __name__ == "__main__":
         break
       logger.debug("Classifying: '%s'", text)
       print classify(text)
-
-
-
-
-  
