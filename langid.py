@@ -50,26 +50,34 @@ def tokenize(instance, feature_space):
   penalty = sum(unaligned.values())
   return aligned, penalty 
 
-def skew(p, q, a=0.99, penalty=0):
-  """
-  Skew divergence between two iterables p and q. 
-  p and q are assumed to be frequency counts
-  """
-  sum_p = sum(p)
-  sum_ratio = float(sum_p) / sum(q)
-  k = log(1 / (1-a))
+try:
+  import numpy
+  # Numpy implementation
+  raise ImportError
+  #TODO: The actual implementation!
 
-  acc_a = 0.
-  acc_b = 0.
+except ImportError:
+  # Pure python implementation
+  def skew(p, q, a=0.99, penalty=0):
+    """
+    Skew divergence between two iterables p and q. 
+    p and q are assumed to be frequency counts
+    """
+    sum_p = sum(p)
+    sum_ratio = float(sum_p) / sum(q)
+    k = log(1 / (1-a))
 
-  for i in xrange(len(p)):
-    if p[i] > 0:
-      if q[i] > 0:
-        r = sum_ratio * a * q[i] + (1-a) * p[i]
-        acc_a += p[i] * log( p[i] / r )
-      else:
-        acc_b += p[i]
-  return ( acc_a + k * (acc_b + penalty) ) / sum_p
+    acc_a = 0.
+    acc_b = 0.
+
+    for i in xrange(len(p)):
+      if p[i] > 0:
+        if q[i] > 0:
+          r = sum_ratio * a * q[i] + (1-a) * p[i]
+          acc_a += p[i] * log( p[i] / r )
+        else:
+          acc_b += p[i]
+    return ( acc_a + k * (acc_b + penalty) ) / sum_p
 
 def classify(instance):
   """
