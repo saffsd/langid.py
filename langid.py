@@ -88,10 +88,29 @@ def tokenize(instance, feature_space):
   return aligned, penalty 
 
 try:
-  import numpy
+  import numpy as np
   # Numpy implementation
-  raise ImportError
-  #TODO: The actual implementation!
+  def skew(p, q, a=0.99, penalty=0):
+    p = np.array(p)
+    q = np.array(q)
+
+    sum_p = p.sum()
+    sum_ratio = float(sum_p) / q.sum()
+
+    # This is just the sum of p where q is zero. 
+    acc_b = np.sum(p * np.logical_not(q))
+
+    # Reduce p and q to only shared features
+    sf = np.logical_and(p, q)
+    p = p[sf]
+    q = q[sf]
+
+    v = p * np.log( p / (sum_ratio * a * q + (1-a) * p) )
+    acc_a = np.sum(v)
+
+    k = log(1 / (1-a))
+    retval = ( acc_a + k * (acc_b) ) / sum_p
+    return retval
 
 except ImportError:
   # Pure python implementation
