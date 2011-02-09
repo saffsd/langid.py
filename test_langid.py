@@ -5,7 +5,7 @@ import os
 import time
 
 data_file = '/lt/work/mlui/data/twitter/msgs21AUG2010'
-base_url = 'http://localhost:8080/detect'
+base_url = 'http://localhost/langid/detect'
 COUNT=50
 
 def test_wiki10k():
