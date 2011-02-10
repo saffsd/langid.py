@@ -34,6 +34,7 @@ or implied, of the copyright holder.
 HOST = "localhost"
 PORT = 9008
 FORCE_NATIVE = False
+FORCE_WSGIREF = False
 
 import itertools
 import array
@@ -174,7 +175,12 @@ def application(environ, start_response):
   """
   WSGI-compatible langid web service.
   """
-  path = shift_path_info(environ)
+  try:
+    path = shift_path_info(environ)
+  except IndexError:
+    # Catch shift_path_info's failure to handle empty paths properly
+    path = ''
+
   if path == 'detect':
     data = None
 
@@ -232,13 +238,24 @@ if __name__ == "__main__":
     logging.basicConfig(level=max((5-options.verbosity)*10, 0))
 
   if options.serve:
-    print "Listening on %s:%d" % (options.host, options.port)
-    print "Press Ctrl+C to exit"
-    httpd = make_server(options.host, options.port, application)
     try:
-      httpd.serve_forever()
-    except KeyboardInterrupt:
-      pass
+      if FORCE_WSGIREF: raise ImportError
+      # Use fapws3 if available
+      import fapws._evwsgi as evwsgi
+      from fapws import base
+      evwsgi.start(options.host,str(options.port))
+      evwsgi.set_base_module(base)
+      evwsgi.wsgi_cb(("/", application))
+      evwsgi.set_debug(0)
+      evwsgi.run()
+    except ImportError:
+      print "Listening on %s:%d" % (options.host, int(options.port))
+      print "Press Ctrl+C to exit"
+      httpd = make_server(options.host, int(options.port), application)
+      try:
+        httpd.serve_forever()
+      except KeyboardInterrupt:
+        pass
   else:
     while True:
       try:
