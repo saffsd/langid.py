@@ -33,6 +33,7 @@ or implied, of the copyright holder.
 # Defaults for inbuilt server
 HOST = "localhost"
 PORT = 9008
+FORCE_NATIVE = False
 
 import itertools
 import array
@@ -88,6 +89,7 @@ def tokenize(instance, feature_space):
   return aligned, penalty 
 
 try:
+  if FORCE_NATIVE: raise ImportError
   import numpy as np
   # Numpy implementation
   def skew(p, q, a=0.99, penalty=0):
@@ -111,6 +113,7 @@ try:
     k = log(1 / (1-a))
     retval = ( acc_a + k * (acc_b) ) / sum_p
     return retval
+  logger.debug('using numpy implementation')
 
 except ImportError:
   # Pure python implementation
@@ -134,6 +137,7 @@ except ImportError:
         else:
           acc_b += p[i]
     return ( acc_a + k * (acc_b + penalty) ) / sum_p
+  logger.debug('using python native implementation')
 
 def classify(instance):
   """
@@ -236,5 +240,4 @@ if __name__ == "__main__":
         text = raw_input()
       except Exception:
         break
-      logger.debug("Classifying: '%s'", text)
       print classify(text)
