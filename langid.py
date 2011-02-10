@@ -72,11 +72,14 @@ def ngram(n, seq):
     if len(token) < n: break
     yield token
   
-def tokenize(instance, feature_space):
+def tokenize(instance, feature_space, arr=None):
   """
   Tokenize an instance into a feature vector according to a preset feature space.
   """
-  aligned = array.array('L', itertools.repeat(0, len(feature_space)))
+  if arr is None:
+    aligned = array.array('L', itertools.repeat(0, len(feature_space)))
+  else:
+    aligned = arr
   unaligned = defaultdict(int)
 
   for token in ngram(2,instance):
@@ -93,9 +96,6 @@ try:
   import numpy as np
   # Numpy implementation
   def skew(p, q, a=0.99, penalty=0):
-    p = np.array(p)
-    q = np.array(q)
-
     sum_p = p.sum()
     sum_ratio = float(sum_p) / q.sum()
 
@@ -113,7 +113,9 @@ try:
     k = log(1 / (1-a))
     retval = ( acc_a + k * (acc_b) ) / sum_p
     return retval
+  class_models = [ np.array(m, dtype='uint32') for m in class_models ]
   logger.debug('using numpy implementation')
+  __USE_NUMPY__ = True
 
 except ImportError:
   # Pure python implementation
@@ -138,12 +140,16 @@ except ImportError:
           acc_b += p[i]
     return ( acc_a + k * (acc_b + penalty) ) / sum_p
   logger.debug('using python native implementation')
+  __USE_NUMPY__ = False
 
 def classify(instance):
   """
   Classify an instance.
   """
-  fv, p = tokenize(instance, feature_space)
+  if __USE_NUMPY__:
+    fv, p = tokenize(instance, feature_space, np.zeros((len(feature_space),), dtype='uint32'))
+  else:
+    fv, p = tokenize(instance, feature_space)
   distances = [ skew(m, fv, penalty=p) for m in class_models ]
   pairs = sorted(zip(distances, class_space))
   dist, pred = pairs[0]
