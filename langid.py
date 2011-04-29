@@ -69,7 +69,8 @@ def load_model(data):
 load_model(wiki10k)
 
 def save_model(path):
-  data = class_models, feature_space, class_space
+  fs = sorted(feature_space, key=feature_space.get)
+  data = class_models, fs, class_space
   data_str = base64.b64encode(bz2.compress(dumps(data)))
   with open(path, 'w') as f:
     f.write(data_str)
@@ -240,7 +241,17 @@ if __name__ == "__main__":
   parser.add_option('--host', default=HOST, dest='host', help='host/ip to bind to')
   parser.add_option('--port', default=PORT, dest='port', help='port to listen on')
   parser.add_option('-v', action='count', dest='verbosity', help='increase verbosity (repeat for greater effect)')
+  parser.add_option('-m', dest='model', help='load model from file')
   options, args = parser.parse_args()
+
+  if options.model:
+    with open(options.model) as f:
+      # TODO: Catch exceptions
+      try:
+        load_model(f.read())
+      except IOError, e:
+        print "Failed to load %s:" % options.model, e
+        print "Using internal model"
 
   if options.verbosity:
     logging.basicConfig(level=max((5-options.verbosity)*10, 0))
