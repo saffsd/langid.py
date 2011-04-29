@@ -72,8 +72,7 @@ def tokenize(text, feature_space, arr):
   """
   Tokenize text into a feature vector stored in arr.
   """
-
-  #TODO: see if the this two-pass design is any faster than building the array directly
+  #NOTE: this two-pass design is any faster than building the array directly
   #TODO: use in-built counter if available
   dist = defaultdict(int)
   state = 0
@@ -101,8 +100,11 @@ try:
   nb_ptc = np.array(nb_ptc).reshape(len(nb_ptc)/len(nb_pc), len(nb_pc))
   nb_features = dict((k,v) for v,k in enumerate(nb_features))
 
+  __logfac = {}
   def logfac(a):
-    return np.sum(np.log(np.arange(1,a+1)))
+    if a not in __logfac:
+      __logfac[a] = np.sum(np.log(np.arange(1,a+1)))
+    return __logfac[a]
   logfac = np.frompyfunc(logfac, 1, 1)
 
   def nb_classify(fv):
