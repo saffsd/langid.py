@@ -72,6 +72,7 @@ def tokenize(text, feature_space, arr):
   Tokenize text into a feature vector stored in arr.
   """
   state = 0
+  #TODO: see if replacing this with a list comprehension or a map makes it faster
   for letter in text:
     state = tk_nextmove[(state << 8) + ord(letter)]
     for index in tk_output.get(state, []):
