@@ -71,13 +71,20 @@ def tokenize(text, feature_space, arr):
   """
   Tokenize text into a feature vector stored in arr.
   """
-  state = 0
-  #TODO: see if replacing this with a list comprehension or a map makes it faster
+  # Convert the text to a sequence of ascii values
   ords = map(ord, text)
+
+  # Count the number of times we enter each state
+  state = 0
+  statecount = defaultdict(int)
   for letter in ords:
     state = tk_nextmove[(state << 8) + letter]
+    statecount[state] += 1
+
+  # Update all the productions corresponding to the state
+  for state in statecount:
     for index in tk_output.get(state, []):
-      arr[index] += 1
+      arr[index] += statecount[state]
 
   return arr
 
