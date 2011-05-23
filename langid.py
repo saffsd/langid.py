@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 """
-Language Identifier 
-by Marco Lui April 2011
+langid.py - 
+Language Identifier by Marco Lui April 2011
+
+Based on research by Marco Lui and Tim Baldwin.
 
 Copyright 2011 Marco Lui <saffsd@gmail.com>. All rights reserved.
 
