@@ -1,9 +1,37 @@
-This is a standalone Language ID tool.
+langid.py is a standalone Language Identification (LangID) tool.
 
 The design principles are as follows:
 
 1) Fast
-2) Make use of multicore where possible
-3) Single .py file
+2) Pre-trained over a large number of languages (currently 97)
+3) Not sensitive to domain-specific features (e.g. HTML/XML markup)
+3) Single .py file with minimal dependencies
 4) Deployable as a web service
-5) Training is not our problem
+
+Currently, all that is required to run langid.py is >= Python 2.5 and numpy. 
+
+langid.py comes pre-trained on 97 languages (ISO 639-1 codes given):
+
+  af, am, an, ar, as, az, be, bg, bn, br, 
+  bs, ca, cs, cy, da, de, dz, el, en, eo, 
+  es, et, eu, fa, fi, fo, fr, ga, gl, gu, 
+  he, hi, hr, ht, hu, hy, id, is, it, ja, 
+  jv, ka, kk, km, kn, ko, ku, ky, la, lb, 
+  lo, lt, lv, mg, mk, ml, mn, mr, ms, mt, 
+  nb, ne, nl, nn, no, oc, or, pa, pl, ps, 
+  pt, qu, ro, ru, rw, se, si, sk, sl, sq, 
+  sr, sv, sw, ta, te, th, tl, tr, ug, uk, 
+  ur, vi, vo, wa, xh, zh, zu
+
+The training data was drawn from 5 different sources:
+  JRC-Acquis 
+  ClueWeb 09
+  Wikipedia
+  Reuters RCV2
+  Debian i18n
+
+langid.py is WSGI-compliant. 
+
+langid.py will use fapws3 as a web server if available, and default to
+wdgiref.simple_server otherwise.
+
