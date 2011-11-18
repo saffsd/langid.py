@@ -9,33 +9,33 @@ langid.py is a standalone Language Identification (LangID) tool.
 
 The design principles are as follows:
 
-1) Fast
-2) Pre-trained over a large number of languages (currently 97)
-3) Not sensitive to domain-specific features (e.g. HTML/XML markup)
-3) Single .py file with minimal dependencies
-4) Deployable as a web service
+1. Fast
+2. Pre-trained over a large number of languages (currently 97)
+3. Not sensitive to domain-specific features (e.g. HTML/XML markup)
+4. Single .py file with minimal dependencies
+5. Deployable as a web service
 
 All that is required to run langid.py is >= Python 2.5 and numpy. 
 
 langid.py comes pre-trained on 97 languages (ISO 639-1 codes given):
 
-  af, am, an, ar, as, az, be, bg, bn, br, 
-  bs, ca, cs, cy, da, de, dz, el, en, eo, 
-  es, et, eu, fa, fi, fo, fr, ga, gl, gu, 
-  he, hi, hr, ht, hu, hy, id, is, it, ja, 
-  jv, ka, kk, km, kn, ko, ku, ky, la, lb, 
-  lo, lt, lv, mg, mk, ml, mn, mr, ms, mt, 
-  nb, ne, nl, nn, no, oc, or, pa, pl, ps, 
-  pt, qu, ro, ru, rw, se, si, sk, sl, sq, 
-  sr, sv, sw, ta, te, th, tl, tr, ug, uk, 
-  ur, vi, vo, wa, xh, zh, zu
+|  af, am, an, ar, as, az, be, bg, bn, br, 
+|  bs, ca, cs, cy, da, de, dz, el, en, eo, 
+|  es, et, eu, fa, fi, fo, fr, ga, gl, gu, 
+|  he, hi, hr, ht, hu, hy, id, is, it, ja, 
+|  jv, ka, kk, km, kn, ko, ku, ky, la, lb, 
+|  lo, lt, lv, mg, mk, ml, mn, mr, ms, mt, 
+|  nb, ne, nl, nn, no, oc, or, pa, pl, ps, 
+|  pt, qu, ro, ru, rw, se, si, sk, sl, sq, 
+|  sr, sv, sw, ta, te, th, tl, tr, ug, uk, 
+|  ur, vi, vo, wa, xh, zh, zu
 
 The training data was drawn from 5 different sources:
-  JRC-Acquis 
-  ClueWeb 09
-  Wikipedia
-  Reuters RCV2
-  Debian i18n
+- JRC-Acquis 
+- ClueWeb 09
+- Wikipedia
+- Reuters RCV2
+- Debian i18n
 
 langid.py is WSGI-compliant. 
 
@@ -47,22 +47,22 @@ Usage
 
 Usage: langid.py [options]
 
-Options:
-  -h, --help   show this help message and exit
-  -s, --serve  
-  --host=HOST  host/ip to bind to
-  --port=PORT  port to listen on
-  -v           increase verbosity (repeat for greater effect)
-  -m MODEL     load model from file
+| Options:
+|   -h, --help   show this help message and exit
+|   -s, --serve  
+|   --host=HOST  host/ip to bind to
+|   --port=PORT  port to listen on
+|   -v           increase verbosity (repeat for greater effect)
+|   -m MODEL     load model from file
 
 
 The simplest way to use langid.py is as a command-line tool. Invoke using `python langid.py`.
 This will cause a prompt to display. Enter text to identify, and hit enter::
 
->>> This is a test
-('en', -55.106250761034801)
->>> Questa e una prova
-('it', -35.417712211608887)
+| >>> This is a test
+| ('en', -55.106250761034801)
+| >>> Questa e una prova
+| ('it', -35.417712211608887)
 
 The value returned is a score for the language. It is not a probability esimate, as it is not
 normalized by the document probability since this is unnecessary for classification.
