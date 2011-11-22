@@ -47,14 +47,17 @@ Usage
 
 ::
   Usage: langid.py [options]
-  
+
   Options:
-    -h, --help   show this help message and exit
-    -s, --serve  
-    --host=HOST  host/ip to bind to
-    --port=PORT  port to listen on
-    -v           increase verbosity (repeat for greater effect)
-    -m MODEL     load model from file
+    -h, --help            show this help message and exit
+    -s, --serve           
+    --host=HOST           host/ip to bind to
+    --port=PORT           port to listen on
+    -v                    increase verbosity (repeat for greater effect)
+    -m MODEL              load model from file
+    -l LANGS, --langs=LANGS
+                          comma-separated set of target ISO639 language codes
+                          (e.g en,de)
 
 
 The simplest way to use langid.py is as a command-line tool. Invoke using `python langid.py`.
@@ -99,3 +102,31 @@ You can also use HTTP PUT::
                                  Dload  Upload   Total   Spent    Left  Speed
   100  2871  100   119  100  2752    117   2723  0:00:01  0:00:01 --:--:--  2727
   {"responseData": {"confidence": -3728.4490563860536, "language": "en"}, "responseDetails": null, "responseStatus": 200}
+
+langid.py supports constraining of the output language set using the "-l" flag and a comma-separated list of ISO639-1 
+language codes::
+
+  # python langid.py -l it,fr
+  >>> Io non parlo italiano
+  ('it', -38.538481712341309)
+  >>> Je ne parle pas français
+  ('fr', -116.95343780517578)
+  >>> I don't speak english
+  ('it', -8.8632845878601074)
+
+When using langid.py as a library, the set_languages method can be used to constrain the language set::
+
+  python                      
+  Python 2.7.2+ (default, Oct  4 2011, 20:06:09) 
+  [GCC 4.6.1] on linux2
+  Type "help", "copyright", "credits" or "license" for more information.
+  >>> import langid
+  >>> langid.classify("I do not speak english")
+  ('en', -48.104645729064941)
+  >>> langid.set_languages(['de','fr','it'])
+  >>> langid.classify("I do not speak english")
+  ('it', -52.895359516143799)
+  >>> langid.set_languages(['en','it'])
+  >>> langid.classify("I do not speak english")
+  ('en', -48.104645729064941)
+
