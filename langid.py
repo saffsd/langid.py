@@ -310,13 +310,20 @@ if __name__ == "__main__":
       except KeyboardInterrupt:
         pass
   else:
-    while True:
-      try:
-        print ">>>",
-        text = raw_input()
-      except Exception:
-        break
-      print classify(text)
+    import sys
+    if sys.stdin.isatty():
+      # Interactive mode
+      while True:
+        try:
+          print ">>>",
+          text = raw_input()
+        except Exception:
+          break
+        print classify(text)
+    else:
+      # Redirected
+      print classify(sys.stdin.read())
+     
 else:
   # Running as an imported module; unpack the internal model
   unpack(model)
