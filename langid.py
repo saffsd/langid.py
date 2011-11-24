@@ -230,7 +230,12 @@ def application(environ, start_response):
         start_response(status, headers)
         return [query_form]
     elif environ['REQUEST_METHOD'] == 'POST':
-      data = parse_qs(environ['wsgi.input'].read(int(environ['CONTENT_LENGTH'])))['q'][0]
+      input_string = environ['wsgi.input'].read(int(environ['CONTENT_LENGTH']))
+      try:
+        data = parse_qs(input_string)['q'][0]
+      except KeyError:
+        # No key 'q', process the whole input instead
+        data = input_string
     else:
       # Unsupported method
       status = '405 Method Not Allowed' # HTTP Status
