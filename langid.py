@@ -33,7 +33,7 @@ or implied, of the copyright holder.
 """
 
 # Defaults for inbuilt server
-HOST = "localhost"
+HOST = None #leave as none for auto-detect
 PORT = 9008
 FORCE_NATIVE = False
 FORCE_WSGIREF = False
@@ -271,6 +271,7 @@ if __name__ == "__main__":
   parser.add_option('-v', action='count', dest='verbosity', help='increase verbosity (repeat for greater effect)')
   parser.add_option('-m', dest='model', help='load model from file')
   parser.add_option('-l', '--langs', dest='langs', help='comma-separated set of target ISO639 language codes (e.g en,de)')
+  parser.add_option('-r', '--remote',action="store_true", default=False, help='auto-detect IP address for remote access')
   options, args = parser.parse_args()
 
   if options.verbosity:
@@ -296,20 +297,35 @@ if __name__ == "__main__":
     set_languages(langs)
 
   if options.serve:
+
+    # from http://stackoverflow.com/questions/166506/finding-local-ip-addresses-in-python
+    if options.remote and options.host is None:
+      # resolve the external ip address
+      import socket
+      s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+      s.connect(("google.com",80))
+      hostname = s.getsockname()[0]
+    elif options.host is None:
+      # resolve the local hostname
+      import socket
+      hostname = socket.gethostbyname(socket.gethostname())
+    else:
+      hostname = options.host
+
     try:
       if FORCE_WSGIREF: raise ImportError
       # Use fapws3 if available
       import fapws._evwsgi as evwsgi
       from fapws import base
-      evwsgi.start(options.host,str(options.port))
+      evwsgi.start(hostname,str(options.port))
       evwsgi.set_base_module(base)
       evwsgi.wsgi_cb(("/", application))
       evwsgi.set_debug(0)
       evwsgi.run()
     except ImportError:
-      print "Listening on %s:%d" % (options.host, int(options.port))
+      print "Listening on %s:%d" % (hostname, int(options.port))
       print "Press Ctrl+C to exit"
-      httpd = make_server(options.host, int(options.port), application)
+      httpd = make_server(hostname, int(options.port), application)
       try:
         httpd.serve_forever()
       except KeyboardInterrupt:

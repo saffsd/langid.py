@@ -115,6 +115,10 @@ file as a single query. This allows for redirection via curl::
   # echo "This is a test" | curl -d @- localhost:9008/detect
   {"responseData": {"confidence": -55.106250761034801, "language": "en"}, "responseDetails": null, "responseStatus": 200}
 
+langid.py will attempt to discover the host IP address automatically. Often, this is set to localhost(127.0.1.1), even 
+though the machine has a different external IP address. langid.py can attempt to automatically discover the external
+IP address. To enable this functionality, start langid.py with the "-r" flag.
+
 langid.py supports constraining of the output language set using the "-l" flag and a comma-separated list of ISO639-1 
 language codes::
 
