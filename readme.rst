@@ -68,6 +68,12 @@ This will cause a prompt to display. Enter text to identify, and hit enter::
   >>> Questa e una prova
   ('it', -35.417712211608887)
 
+langid.py can also detect when the input is redirected (only tested under Linux), and in this
+case will process until EOF rather than until newline like in interactive mode::
+
+  python langid.py < readme.rst 
+  ('en', -5347.4231110975252)
+
 The value returned is a score for the language. It is not a probability esimate, as it is not
 normalized by the document probability since this is unnecessary for classification.
 
@@ -102,6 +108,12 @@ You can also use HTTP PUT::
                                  Dload  Upload   Total   Spent    Left  Speed
   100  2871  100   119  100  2752    117   2723  0:00:01  0:00:01 --:--:--  2727
   {"responseData": {"confidence": -3728.4490563860536, "language": "en"}, "responseDetails": null, "responseStatus": 200}
+
+If no "q=XXX" key-value pair is present in the HTTP POST payload, langid.py will interpret the entire
+file as a single query. This allows for redirection via curl::
+
+  # echo "This is a test" | curl -d @- localhost:9008/detect
+  {"responseData": {"confidence": -55.106250761034801, "language": "en"}, "responseDetails": null, "responseStatus": 200}
 
 langid.py supports constraining of the output language set using the "-l" flag and a comma-separated list of ISO639-1 
 language codes::
