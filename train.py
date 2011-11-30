@@ -33,8 +33,6 @@ authors and should not be interpreted as representing official policies, either 
 or implied, of the copyright holder.
 """
 
-PROCESS_COUNT = 32 
-
 import numpy as np
 import base64
 import bz2
@@ -211,6 +209,7 @@ if __name__ == "__main__":
   parser.add_option("-o","--output", dest="outfile", help="output model to FILE", metavar="FILE")
   parser.add_option("-c","--corpus", dest="corpus", help="read corpus from DIR", metavar="DIR")
   parser.add_option("-i","--input", dest="infile", help="read features from FILE", metavar="FILE")
+  parser.add_option("-j","--jobs", dest="job_count", type="int", help="number of processes to use", default=mp.cpu_count())
   options, args = parser.parse_args()
   
   print "target dir: ", options.corpus 
@@ -227,6 +226,7 @@ if __name__ == "__main__":
   feat_index = index(nb_features)
 
   # Build the actual scanner
+  print "building scanner"
   scanner = Scanner(nb_features)
   tk_nextmove, raw_output = scanner.__getstate__()
 
@@ -236,7 +236,8 @@ if __name__ == "__main__":
     state2feat[k] = tuple(feat_index[f] for f in v)
     
   nm_arr = mp.Array('i', tk_nextmove, lock=False)
-  pool = mp.Pool(PROCESS_COUNT, set_nmarr, (nm_arr,))
+  pool = mp.Pool(options.job_count, set_nmarr, (nm_arr,))
+  print "spawned pool of %d processes" % options.job_count
 
   num_instances = len(paths)
   num_classes = len(langs)
