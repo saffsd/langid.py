@@ -43,6 +43,7 @@ FEATURES_PER_LANG = 300 # number of features to select for each language
 
 import os, sys, optparse
 import collections
+import csv
 import shutil
 import tempfile
 import marshal
@@ -50,6 +51,7 @@ import numpy
 import multiprocessing as mp
 from itertools import tee, izip, repeat
 from collections import defaultdict
+from datetime import datetime
 
 class disklist(collections.Iterable, collections.Sized):
   """
@@ -195,18 +197,30 @@ def pass1(path):
     retval = set(extractor(f.read()))
   return retval
 
+def write_weights(path, weights):
+  w = dict(weights)
+  with open(path, 'w') as f:
+    writer = csv.writer(f, delimiter = '\t')
+    for k in sorted(w, key=w.get, reverse=True):
+      writer.writerow((repr(k), w[k]))
+
 
 if __name__ == "__main__":
   parser = optparse.OptionParser()
-  parser.add_option("-o","--output", dest="outfile", help="output model to FILE", metavar="FILE")
+  parser.add_option("-o","--output", dest="outfile", help="output features to FILE", metavar="FILE")
   parser.add_option("-c","--corpus", dest="corpus", help="read corpus from DIR", metavar="DIR")
   parser.add_option("-j","--jobs", dest="job_count", type="int", help="number of processes to use", default=mp.cpu_count())
+  parser.add_option("-w","--weights",dest="weights", help="output weights to DIR (optional)", metavar="DIR")
   parser.add_option("--max_order", dest="max_order", type="int", help="highest n-gram order to use", default=MAX_NGRAM_ORDER)
   parser.add_option("--feats_per_lang", dest="feats_per_lang", type="int", help="number of features to retain for each language", default=FEATURES_PER_LANG)
   parser.add_option("--df_tokens", dest="df_tokens", type="int", help="number of tokens to consider for each n-gram order", 
   default=TOP_DOC_FREQ)
 
   options, args = parser.parse_args()
+
+  if options.weights:
+    if not os.path.exists(options.weights):
+      os.mkdir(options.weights)
 
   print "target dir: ", options.corpus
   paths = []
@@ -288,29 +302,41 @@ if __name__ == "__main__":
     cm_domain[docid, domain_index[domain]] = True
     cm_lang[docid, lang_index[lang]] = True
 
+
+  # Convert candidate_features from character tuples to strings
+  candidate_features = [ ''.join(f) for f in candidate_features ]
+
   print "computing information gain"
   # Compute the information gain WRT domains and binary for each language
   ig = InfoGain(num_process=options.job_count)
   w_domain = ig.weight(feature_map, cm_domain)
-  w_lang = dict()
+  if options.weights:
+    write_weights(os.path.join(options.weights, 'domain'), zip(candidate_features, w_domain))
+
+  final_feature_set = set()
   for lang in lang_index:
-    print "infogain: ", lang
+    print "computing infogain: ", lang
+    start_t = datetime.now()
     pos = cm_lang[:, lang_index[lang]]
     neg = numpy.logical_not(pos)
     cm = numpy.hstack((neg[:,None], pos[:,None]))
-    w_lang[lang] = ig.weight(feature_map, cm)
-
-  # Compute LD weights and obtain a final feature set
-  final_feature_set = set()
-  for lang in w_lang:
-    ld_w = dict(zip(candidate_features, w_lang[lang] - w_domain))
+    w_lang = ig.weight(feature_map, cm)
+    items = zip(candidate_features, w_lang - w_domain)
+    ld_w = dict(items)
     final_feature_set |= set(sorted(ld_w, key=ld_w.get, reverse=True)[:options.feats_per_lang])
+    print "  done! duration: %ss" % str(datetime.now() - start_t)
+    if options.weights:
+      path = os.path.join(options.weights, lang)
+      write_weights(path, items)
+      print '  output %s weights to: "%s"' % (lang, path)
+        
+
 
   # Output
   print "selected %d features" % len(final_feature_set)
   with open(options.outfile,'w') as f:
     for feat in final_feature_set:
-      print >>f, repr(''.join(feat))
+      print >>f, repr(feat)
 
   print 'wrote features to "%s"' % options.outfile
     
