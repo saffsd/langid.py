@@ -33,12 +33,12 @@ authors and should not be interpreted as representing official policies, either 
 or implied, of the copyright holder.
 """
 
-import numpy as np
-import base64
-import bz2
+import base64, bz2, cPickle
+import os, sys, optparse
 import array
-import cPickle
-from collections import deque
+import numpy as np
+import multiprocessing as mp
+from collections import deque, defaultdict
 
 class Scanner(object):
   alphabet = map(chr, range(1<<8))
@@ -165,7 +165,6 @@ def set_nmarr(arg):
   global nm_arr
   nm_arr = arg
 
-from collections import defaultdict
 def pass2(path):
   """
   Returns counts of how often each state was entered
@@ -182,9 +181,14 @@ def pass2(path):
 
 
 def nb_learn(fm, cm):
+  """
+  Learn naive bayes parameters from a feature map and 
+  a class map. We use the multinomial event model.
+  @param fm feature map
+  @param cm class map
+  @returns pc: log(P(C)) ptc: log(P(t|C))
+  """
   tot_cl = cm.shape[1]
-  #used_cl = np.flatnonzero(cm.sum(0) > 0)
-  #cm = sp.csr_matrix(cm[:,used_cl], dtype='int32')
   v = fm.shape[1]
   prod = np.dot(fm.T, cm)
   pc = np.log(cm.sum(0))
@@ -192,18 +196,15 @@ def nb_learn(fm, cm):
   return pc, ptc
 
 def index(seq):
+  """
+  Build an index for a sequence of items. Assumes
+  that the items in the sequence are unique.
+  @param seq the sequence to index
+  @returns a dictionary from item to position in the sequence
+  """
   return dict((k,v) for (v,k) in enumerate(seq))
 
 
-
-
-
-
-
-import sys
-import os
-import multiprocessing as mp
-import optparse
 if __name__ == "__main__":
   parser = optparse.OptionParser()
   parser.add_option("-o","--output", dest="outfile", help="output model to FILE", metavar="FILE")
@@ -212,7 +213,7 @@ if __name__ == "__main__":
   parser.add_option("-j","--jobs", dest="job_count", type="int", help="number of processes to use", default=mp.cpu_count())
   options, args = parser.parse_args()
   
-  print "target dir: ", options.corpus 
+  print "data directory: ", options.corpus 
   langs = set()
   paths = []
   for dirpath, dirnames, filenames in os.walk(options.corpus):
@@ -265,7 +266,7 @@ if __name__ == "__main__":
     for state in (set(stateset) & output_states):
       for f_id in state2feat[state]:
         fm[docid, f_id] += stateset[state]
-
+  pool.close()
   print "generated feature map"
 
   pc, ptc = nb_learn(fm, cm)
@@ -285,3 +286,4 @@ if __name__ == "__main__":
   string = base64.b64encode(bz2.compress(cPickle.dumps(model)))
   with open(options.outfile, 'w') as f:
     f.write(string)
+  print "wrote model to %s (%d bytes)" % (options.outfile, len(string))
