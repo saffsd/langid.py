@@ -218,11 +218,23 @@ if __name__ == "__main__":
 
   options, args = parser.parse_args()
 
+  if not options.corpus:
+    parser.error("corpus must be specified")
+    
   if options.weights:
     if not os.path.exists(options.weights):
       os.mkdir(options.weights)
 
-  print "target dir: ", options.corpus
+  # work out output path
+  if options.outfile:
+    output_path = options.outfile 
+  elif os.path.basename(options.corpus):
+    output_path = os.path.basename(options.corpus+'.LDfeatures')
+  else:
+    output_path = options.corpus+'.LDfeatures'
+  print "output path:", output_path
+
+  print "corpus path:", options.corpus
   paths = []
   for dirpath, dirnames, filenames in os.walk(options.corpus):
     for f in filenames:
@@ -334,10 +346,10 @@ if __name__ == "__main__":
 
   # Output
   print "selected %d features" % len(final_feature_set)
-  with open(options.outfile,'w') as f:
+
+  with open(output_path,'w') as f:
     for feat in final_feature_set:
       print >>f, repr(feat)
-
-  print 'wrote features to "%s"' % options.outfile
+    print 'wrote features to "%s"' % output_path 
     
 
