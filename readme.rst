@@ -146,3 +146,42 @@ When using langid.py as a library, the set_languages method can be used to const
   >>> langid.classify("I do not speak english")
   ('en', -48.104645729064941)
 
+Training a model
+----------------
+Training a model for langid.py is a non-trivial process, due to the large amount of computations required
+for the feature selection stage. Nonetheless, a parallelized model generator is provided with langid.py. 
+The model training is broken into two steps:
+
+1. LD Feature Selection (LDfeatureselect.py)
+2. Naive Bayes learning (train.py)
+
+The two steps are fully independent, and can potentially be run on different data sets. It is also possible 
+to replace the feature selection with an alternative set of features. 
+
+To train a model, we require multiple corpora of monolingual documents. Each document should be a single file,
+and each file should be in a 2-deep folder hierarchy, with language nested within domain. For example, we
+may have a number of English files:
+
+  ./corpus/domain1/en/File1.txt
+  ./corpus/domainX/en/001-file.xml
+
+This is the hierarchy that both LDfeatureselect.py and train.py expect. The -c argment for both is the name
+of the directory containing the domain-specific subdirectories, in this example './corpus'. The output file
+is specified with the '-o' option.
+
+To learn features, we would invoke::
+
+    python LDfeatureselect.py -c corpus -o features
+
+This would create a file called 'features' containing features in a one-per-line format that can be parsed 
+by python's eval().
+
+To then generate a model using the same corpus and the selected features, we would invoke::
+    
+    python train.py -c corpus -o model -i features
+
+This will generate a compressed model in a file called 'model'. The path to this file can then be passed 
+as a command-line argument to langid.py::
+
+    python langid.py -m model
+
