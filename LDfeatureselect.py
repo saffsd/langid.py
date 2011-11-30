@@ -32,23 +32,24 @@ The views and conclusions contained in the software and documentation are those 
 authors and should not be interpreted as representing official policies, either expressed
 or implied, of the copyright holder.
 """
-MAX_NGRAM_ORDER = 4
-TOP_DOC_FREQ = 15000
-FEATURES_PER_LANG = 300
-PROCESS_COUNT = 32 
 
-import numpy
+######
+# Default values
+# Can be overriden with command-line options
+######
+MAX_NGRAM_ORDER = 4 # largest order of n-grams to consider
+TOP_DOC_FREQ = 15000 # number of tokens to consider for each order
+FEATURES_PER_LANG = 300 # number of features to select for each language
 
-import tempfile
+import os, sys, optparse
 import collections
 import shutil
-import os
-import marshal
-
-
-import collections
-import marshal
 import tempfile
+import marshal
+import numpy
+import multiprocessing as mp
+from itertools import tee, izip, repeat
+from collections import defaultdict
 
 class disklist(collections.Iterable, collections.Sized):
   """
@@ -75,7 +76,6 @@ class disklist(collections.Iterable, collections.Sized):
     self.count += 1
 
 
-from itertools import tee, izip, repeat
 class Tokenizer(object):
   def __init__(self, max_order):
     self.max_order = max_order
@@ -96,8 +96,6 @@ class Tokenizer(object):
       for b in xrange(1, max_order-a):
         yield token[a:a+b]
 
-import multiprocessing as mp
-from collections import defaultdict
 class Enumerator(object):
   """
   Enumerator object. Returns a larger number each call. 
@@ -183,22 +181,36 @@ class InfoGain(object):
     feature_weights[nz_index] = nz_fw
     return feature_weights
 
+def set_maxorder(arg):
+  global __maxorder
+  __maxorder = arg
+
 def pass1(path):
   """
   Read a file on disk and return the set of types it contains.
   """
-  extractor = Tokenizer(MAX_NGRAM_ORDER)
+  global __maxorder
+  extractor = Tokenizer(__maxorder)
   with open(path) as f:
     retval = set(extractor(f.read()))
   return retval
 
 
 if __name__ == "__main__":
-  import os, sys
-  target_dir = sys.argv[1]
-  print "target dir: ", target_dir
+  parser = optparse.OptionParser()
+  parser.add_option("-o","--output", dest="outfile", help="output model to FILE", metavar="FILE")
+  parser.add_option("-c","--corpus", dest="corpus", help="read corpus from DIR", metavar="DIR")
+  parser.add_option("-j","--jobs", dest="job_count", type="int", help="number of processes to use", default=mp.cpu_count())
+  parser.add_option("--max_order", dest="max_order", type="int", help="highest n-gram order to use", default=MAX_NGRAM_ORDER)
+  parser.add_option("--feats_per_lang", dest="feats_per_lang", type="int", help="number of features to retain for each language", default=FEATURES_PER_LANG)
+  parser.add_option("--df_tokens", dest="df_tokens", type="int", help="number of tokens to consider for each n-gram order", 
+  default=TOP_DOC_FREQ)
+
+  options, args = parser.parse_args()
+
+  print "target dir: ", options.corpus
   paths = []
-  for dirpath, dirnames, filenames in os.walk(target_dir):
+  for dirpath, dirnames, filenames in os.walk(options.corpus):
     for f in filenames:
       paths.append(os.path.join(dirpath, f))
   print "found %d files" % len(paths)
@@ -234,7 +246,7 @@ if __name__ == "__main__":
         print "%d..." % i
       yield p
 
-  pool = mp.Pool(PROCESS_COUNT)
+  pool = mp.Pool(options.job_count, set_maxorder, (options.max_order,))
 
   termsets = pool.imap(pass1, get_paths())
   doc_count = defaultdict(int)
@@ -251,9 +263,9 @@ if __name__ == "__main__":
 
   # Work out the set of features to compute IG
   candidate_features = set()
-  for i in range(1, MAX_NGRAM_ORDER+1):
+  for i in range(1, options.max_order+1):
     d = dict( (k, doc_count[k]) for k in doc_count if len(k) == i)
-    candidate_features |= set(sorted(d, key=d.get, reverse=True)[:TOP_DOC_FREQ])
+    candidate_features |= set(sorted(d, key=d.get, reverse=True)[:options.df_tokens])
   candidate_features = sorted(candidate_features)
   print "candidate features: ", len(candidate_features)
 
@@ -278,7 +290,7 @@ if __name__ == "__main__":
 
   print "computing information gain"
   # Compute the information gain WRT domains and binary for each language
-  ig = InfoGain(num_process=PROCESS_COUNT)
+  ig = InfoGain(num_process=options.job_count)
   w_domain = ig.weight(feature_map, cm_domain)
   w_lang = dict()
   for lang in lang_index:
@@ -292,14 +304,14 @@ if __name__ == "__main__":
   final_feature_set = set()
   for lang in w_lang:
     ld_w = dict(zip(candidate_features, w_lang[lang] - w_domain))
-    final_feature_set |= set(sorted(ld_w, key=ld_w.get, reverse=True)[:FEATURES_PER_LANG])
+    final_feature_set |= set(sorted(ld_w, key=ld_w.get, reverse=True)[:options.feats_per_lang])
 
   # Output
   print "selected %d features" % len(final_feature_set)
-  with open('weights','w') as f:
+  with open(options.outfile,'w') as f:
     for feat in final_feature_set:
       print >>f, repr(''.join(feat))
 
-  #TODO: Build a nice optparse interface
+  print 'wrote features to "%s"' % options.outfile
     
 
