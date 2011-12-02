@@ -150,14 +150,6 @@ class Scanner(object):
       for key in self.output.get(state, []):
         yield key
 
-  def tokenize(self, text):
-    c = Counter()
-    state = 0
-    for letter in map(ord,text):
-      state = self.nm_arr[(state << 8) + letter]
-      c.update( self.output.get(state, []) )
-    return c
-
 def set_nmarr(arg):
   """
   Set the global next-move array used by the aho-corasick scanner

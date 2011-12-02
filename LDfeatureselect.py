@@ -204,6 +204,130 @@ def write_weights(path, weights):
     for k in sorted(w, key=w.get, reverse=True):
       writer.writerow((repr(k), w[k]))
 
+class ClassIndexer(object):
+  def __init__(self, paths):
+    self.lang_index = defaultdict(Enumerator())
+    self.domain_index = defaultdict(Enumerator())
+    self.doc_keys = []
+    self.index_paths(paths)
+
+  def index_paths(self, paths):
+    for path in paths:
+      # split the path into identifying components
+      path, docname = os.path.split(path)
+      path, lang = os.path.split(path)
+      path, domain = os.path.split(path)
+
+      # obtain a unique key for the file
+      key = domain,lang,docname
+      self.doc_keys.append(key)
+
+      # index the language and the domain
+      lang_id = self.lang_index[lang]
+      domain_id = self.domain_index[domain]
+
+  def get_class_maps(self):
+    num_instances = len(self.doc_keys)
+    cm_domain = numpy.zeros((num_instances, len(self.domain_index)), dtype='bool')
+    cm_lang = numpy.zeros((num_instances, len(self.lang_index)), dtype='bool')
+
+    # Populate the class maps
+    for docid, (domain, lang, docname) in enumerate(self.doc_keys):
+      cm_domain[docid, self.domain_index[domain]] = True
+      cm_lang[docid, self.lang_index[lang]] = True
+    return cm_domain, cm_lang
+
+def compute_infogain(features, lang_index, feature_map, cm_domain, cm_lang, options):
+  print "computing information gain"
+  # Compute the information gain WRT domains and binary for each language
+  ig = InfoGain(num_process=options.job_count)
+  w_domain = ig.weight(feature_map, cm_domain)
+  if options.weights:
+    write_weights(os.path.join(options.weights, 'domain'), zip(features, w_domain))
+
+  final_feature_set = set()
+  for lang in lang_index:
+    print "computing infogain: ", lang
+    start_t = datetime.now()
+    pos = cm_lang[:, lang_index[lang]]
+    neg = numpy.logical_not(pos)
+    cm = numpy.hstack((neg[:,None], pos[:,None]))
+    w_lang = ig.weight(feature_map, cm)
+    items = zip(features, w_lang - w_domain)
+    ld_w = dict(items)
+    final_feature_set |= set(sorted(ld_w, key=ld_w.get, reverse=True)[:options.feats_per_lang])
+    print "  done! duration: %ss" % str(datetime.now() - start_t)
+    if options.weights:
+      path = os.path.join(options.weights, lang)
+      write_weights(path, items)
+      print '  output %s weights to: "%s"' % (lang, path)
+  return final_feature_set
+
+def get_classmaps(paths):
+  indexer = ClassIndexer(paths)
+  cm_domain, cm_lang = indexer.get_class_maps()
+  print "langs:", indexer.lang_index.keys()
+  print "domains:", indexer.domain_index.keys()
+  return cm_domain, cm_lang, indexer.lang_index 
+
+def get_featuremap(paths, options):
+
+  # First pass: Construct candidate set of types
+  def get_paths():
+    for i,p in enumerate(paths):
+      if i % 100 == 0:
+        print "%d..." % i
+      yield p
+    print "Done Producing!"
+
+  pool = mp.Pool(options.job_count, set_maxorder, (options.max_order,))
+
+  # Tokenize documents into sets of terms
+  termsets = pool.imap(pass1, get_paths(), chunksize=1)
+  pool.close()
+  doc_count = defaultdict(int)
+  term_index = defaultdict(Enumerator())
+  doc_reprs = disklist() # list of lists of termid-count pairs
+  count = 0
+  for termset in termsets:
+    doc_repr = []
+    for term in termset:
+      doc_count[term] += 1
+      doc_repr.append(term_index[term])
+    doc_reprs.append(set(doc_repr))
+    count += 1
+    if count % 100 == 0:
+      print "Consumed %d..." % count
+  print "Done Consuming"
+
+  # Work out the set of features to compute IG
+  candidate_features = set()
+  for i in range(1, options.max_order+1):
+    d = dict( (k, doc_count[k]) for k in doc_count if len(k) == i)
+    candidate_features |= set(sorted(d, key=d.get, reverse=True)[:options.df_tokens])
+  candidate_features = sorted(candidate_features)
+  print "candidate features: ", len(candidate_features)
+
+
+  # Compute indices of features to retain
+  feats = tuple(term_index[f] for f in candidate_features)
+
+  # Initialize feature and class maps 
+  num_instances = len(paths)
+  feature_map = numpy.zeros((num_instances, len(candidate_features)), dtype='bool')
+  
+  print "doc_reprs:", len(doc_reprs)
+  print "feats:", len(feats)
+
+  # Populate the feature map
+  for docid, doc_repr in enumerate(doc_reprs):
+    for featid, termid in enumerate(feats):
+      feature_map[docid, featid] = termid in doc_repr
+  print "feature map sum:", feature_map.sum()
+
+  # Convert features from character tuples to strings
+  features = [ ''.join(f) for f in candidate_features ]
+  return feature_map, features
 
 if __name__ == "__main__":
   parser = optparse.OptionParser()
@@ -218,6 +342,7 @@ if __name__ == "__main__":
 
   options, args = parser.parse_args()
 
+  # check options
   if not options.corpus:
     parser.error("corpus must be specified")
     
@@ -234,116 +359,18 @@ if __name__ == "__main__":
     output_path = options.corpus+'.LDfeatures'
   print "output path:", output_path
 
-  print "corpus path:", options.corpus
+  # build a list of paths
   paths = []
   for dirpath, dirnames, filenames in os.walk(options.corpus):
     for f in filenames:
       paths.append(os.path.join(dirpath, f))
+  print "corpus path:", options.corpus
   print "found %d files" % len(paths)
 
-
-  # Initialize language and domain indexers
-  lang_index = defaultdict(Enumerator())
-  domain_index = defaultdict(Enumerator())
-  doc_keys = []
-
-  # Index the paths
-  for path in paths:
-    # split the path into identifying components
-    path, docname = os.path.split(path)
-    path, lang = os.path.split(path)
-    path, domain = os.path.split(path)
-
-    # obtain a unique key for the file
-    key = domain,lang,docname
-    doc_keys.append(key)
-
-    # index the language and the domain
-    lang_id = lang_index[lang]
-    domain_id = domain_index[domain]
-
-  print "langs:", lang_index.keys()
-  print "domains:", domain_index.keys()
-
-  # First pass: Construct candidate set of types
-  def get_paths():
-    for i,p in enumerate(paths):
-      if i % 100 == 0:
-        print "%d..." % i
-      yield p
-
-  pool = mp.Pool(options.job_count, set_maxorder, (options.max_order,))
-
-  termsets = pool.imap(pass1, get_paths())
-  doc_count = defaultdict(int)
-  term_index = defaultdict(Enumerator())
-  doc_reprs = disklist() # list of lists of termid-count pairs
-  for termset in termsets:
-    doc_repr = set()
-    for term in termset:
-      doc_count[term] += 1
-      doc_repr.add(term_index[term])
-    doc_reprs.append(doc_repr)
-  pool.close()
-  print "first pass complete"
-
-  # Work out the set of features to compute IG
-  candidate_features = set()
-  for i in range(1, options.max_order+1):
-    d = dict( (k, doc_count[k]) for k in doc_count if len(k) == i)
-    candidate_features |= set(sorted(d, key=d.get, reverse=True)[:options.df_tokens])
-  candidate_features = sorted(candidate_features)
-  print "candidate features: ", len(candidate_features)
-
-  # Compute indices of features to retain
-  feats = tuple(term_index[f] for f in candidate_features)
-
-  # Initialize feature and class maps 
-  num_instances = len(doc_keys)
-  feature_map = numpy.zeros((num_instances, len(candidate_features)), dtype='bool')
-  cm_domain = numpy.zeros((num_instances, len(domain_index)), dtype='bool')
-  cm_lang = numpy.zeros((num_instances, len(lang_index)), dtype='bool')
-
-  # Populate the feature map
-  for docid, doc_repr in enumerate(doc_reprs):
-    for featid, termid in enumerate(feats):
-      feature_map[docid, featid] = termid in doc_repr
-
-  # Populate the class maps
-  for docid, (domain, lang, docname) in enumerate(doc_keys):
-    cm_domain[docid, domain_index[domain]] = True
-    cm_lang[docid, lang_index[lang]] = True
-
-
-  # Convert candidate_features from character tuples to strings
-  candidate_features = [ ''.join(f) for f in candidate_features ]
-
-  print "computing information gain"
-  # Compute the information gain WRT domains and binary for each language
-  ig = InfoGain(num_process=options.job_count)
-  w_domain = ig.weight(feature_map, cm_domain)
-  if options.weights:
-    write_weights(os.path.join(options.weights, 'domain'), zip(candidate_features, w_domain))
-
-  final_feature_set = set()
-  for lang in lang_index:
-    print "computing infogain: ", lang
-    start_t = datetime.now()
-    pos = cm_lang[:, lang_index[lang]]
-    neg = numpy.logical_not(pos)
-    cm = numpy.hstack((neg[:,None], pos[:,None]))
-    w_lang = ig.weight(feature_map, cm)
-    items = zip(candidate_features, w_lang - w_domain)
-    ld_w = dict(items)
-    final_feature_set |= set(sorted(ld_w, key=ld_w.get, reverse=True)[:options.feats_per_lang])
-    print "  done! duration: %ss" % str(datetime.now() - start_t)
-    if options.weights:
-      path = os.path.join(options.weights, lang)
-      write_weights(path, items)
-      print '  output %s weights to: "%s"' % (lang, path)
+  fm, features = get_featuremap(paths, options)
+  cm_domain, cm_lang, lang_index = get_classmaps(paths)
+  final_feature_set = compute_infogain(features, lang_index, fm, cm_domain, cm_lang, options)
         
-
-
   # Output
   print "selected %d features" % len(final_feature_set)
 
