@@ -48,6 +48,7 @@ import shutil
 import tempfile
 import marshal
 import numpy
+import cPickle
 import multiprocessing as mp
 from itertools import tee, izip, repeat
 from collections import defaultdict
@@ -237,7 +238,7 @@ class ClassIndexer(object):
       cm_lang[docid, self.lang_index[lang]] = True
     return cm_domain, cm_lang
 
-def compute_infogain(features, lang_index, feature_map, cm_domain, cm_lang, options):
+def select_LD_features(features, lang_index, feature_map, cm_domain, cm_lang, options):
   print "computing information gain"
   # Compute the information gain WRT domains and binary for each language
   ig = InfoGain(num_process=options.job_count)
@@ -283,7 +284,7 @@ def get_featuremap(paths, options):
   pool = mp.Pool(options.job_count, set_maxorder, (options.max_order,))
 
   # Tokenize documents into sets of terms
-  termsets = pool.imap(pass1, get_paths(), chunksize=1)
+  termsets = pool.imap(pass1, get_paths(), chunksize=10)
   pool.close()
   doc_count = defaultdict(int)
   term_index = defaultdict(Enumerator())
@@ -299,6 +300,7 @@ def get_featuremap(paths, options):
     if count % 100 == 0:
       print "Consumed %d..." % count
   print "Done Consuming"
+  print "unique features: ", len(term_index)
 
   # Work out the set of features to compute IG
   candidate_features = set()
@@ -335,6 +337,8 @@ if __name__ == "__main__":
   parser.add_option("-c","--corpus", dest="corpus", help="read corpus from DIR", metavar="DIR")
   parser.add_option("-j","--jobs", dest="job_count", type="int", help="number of processes to use", default=mp.cpu_count())
   parser.add_option("-w","--weights",dest="weights", help="output weights to DIR (optional)", metavar="DIR")
+  parser.add_option("-s","--save",dest="save", help="pickle an intermediate model to FILE", metavar="FILE")
+  parser.add_option("-l","--load",dest="load", help="load an intermediate model from FILE", metavar="FILE")
   parser.add_option("--max_order", dest="max_order", type="int", help="highest n-gram order to use", default=MAX_NGRAM_ORDER)
   parser.add_option("--feats_per_lang", dest="feats_per_lang", type="int", help="number of features to retain for each language", default=FEATURES_PER_LANG)
   parser.add_option("--df_tokens", dest="df_tokens", type="int", help="number of tokens to consider for each n-gram order", 
@@ -343,9 +347,12 @@ if __name__ == "__main__":
   options, args = parser.parse_args()
 
   # check options
-  if not options.corpus:
-    parser.error("corpus must be specified")
-    
+  if not (options.corpus or options.load):
+    parser.error("corpus(-c) or intermediate model(-l) must be specified")
+
+  if options.save and options.load:
+    parser.error("can only specify one of -l or -s")
+
   if options.weights:
     if not os.path.exists(options.weights):
       os.mkdir(options.weights)
@@ -353,23 +360,58 @@ if __name__ == "__main__":
   # work out output path
   if options.outfile:
     output_path = options.outfile 
-  elif os.path.basename(options.corpus):
-    output_path = os.path.basename(options.corpus+'.LDfeatures')
+  elif options.corpus:
+    if os.path.basename(options.corpus):
+      output_path = os.path.basename(options.corpus+'.LDfeatures')
+    else:
+      output_path = options.corpus+'.LDfeatures'
   else:
-    output_path = options.corpus+'.LDfeatures'
+    output_path = 'a.LDfeatures'
+
+  # display paths
   print "output path:", output_path
+  if options.corpus:
+    print "corpus path:", options.corpus
+  if options.weights:
+    print "weights path:", options.weights
+  if options.load:
+    print "load intermediate:", options.load
+  if options.save:
+    print "save intermediate:", options.save
 
-  # build a list of paths
-  paths = []
-  for dirpath, dirnames, filenames in os.walk(options.corpus):
-    for f in filenames:
-      paths.append(os.path.join(dirpath, f))
-  print "corpus path:", options.corpus
-  print "found %d files" % len(paths)
 
-  fm, features = get_featuremap(paths, options)
-  cm_domain, cm_lang, lang_index = get_classmaps(paths)
-  final_feature_set = compute_infogain(features, lang_index, fm, cm_domain, cm_lang, options)
+
+  # Obtain tokenized representation
+  if options.load:
+    with open(options.load) as f:
+      (features, lang_index, fm, cm_domain, cm_lang) = cPickle.load(f)
+    print 'loaded intermediate model: "%s"' % options.load
+  else:
+    # build a list of paths
+    paths = []
+    for dirpath, dirnames, filenames in os.walk(options.corpus):
+      for f in filenames:
+        paths.append(os.path.join(dirpath, f))
+    print "will tokenize %d files" % len(paths)
+
+    cm_domain, cm_lang, lang_index = get_classmaps(paths)
+    fm, features = get_featuremap(paths, options)
+
+  # Save tokenized representaion
+  if options.save:
+    with open(options.save, 'w') as f:
+      cPickle.dump((features, lang_index, fm, cm_domain, cm_lang), f)
+      print 'wrote intermediate model: "%s"' % options.save
+
+  #features = [ 'f%5d' % f for f in range(0,45256)]
+  #fm = numpy.empty((cm_domain.shape[0], len(features)), dtype='bool')
+  # Compute LD from tokenized representation
+  try:
+    final_feature_set = select_LD_features(features, lang_index, fm, cm_domain, cm_lang, options)
+  except OSError, e:
+    print e
+    import pdb;pdb.pm()
+ 
         
   # Output
   print "selected %d features" % len(final_feature_set)
