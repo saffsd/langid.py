@@ -193,14 +193,21 @@ def pass1(pathschunk):
   extractor = Tokenizer(__maxorder)
   doc_count = defaultdict(int)
   doc_reprs = []
+  token_index = {}
+  token_count = 0
 
   for path in pathschunk:
     with open(path) as f:
       tokenset = set(extractor(f.read()))
-      doc_reprs.append(tokenset)
+      doc_repr = set()
       for token in tokenset:
         doc_count[token] += 1
-  return doc_count, doc_reprs
+        if token not in token_index:
+          token_index[token] = token_count
+          token_count += 1
+        doc_repr.add(token_index[token])
+      doc_reprs.append(doc_repr)
+  return doc_count, token_index, doc_reprs
 
 def write_weights(path, weights):
   w = dict(weights)
@@ -291,24 +298,21 @@ def get_featuremap(paths, options):
 
   # Tokenize documents into sets of terms
   # TODO: Dynamic selection of chunk size depending on input count
-  chunk_out = pool.imap_unordered(pass1, chunk(paths, 200), chunksize=1)
+  chunk_size = min(len(paths) / (options.job_count*2), 1000)
+  chunk_out = pool.imap_unordered(pass1, chunk(paths, chunk_size), chunksize=1)
   pool.close()
   doc_count = defaultdict(int)
-  term_index = {}
-  term_count = 0
   doc_reprs = disklist() # list of lists of termid-count pairs
   processed = 0
-  for count, reprs in chunk_out:
+  total = len(paths)/chunk_size + (0 if len(paths)%chunk_size else 1)
+
+  print "chunk size: %d (%d chunks)" % (chunk_size, total)
+  for count, term_index, reprs in chunk_out:
     for term in count:
       doc_count[term] += count[term]
-      if term not in term_index:
-        term_index[term] = term_count
-        term_count += 1
-    for doc_repr in reprs:
-      doc_reprs.append(map(term_index.get,doc_repr))
-      processed += 1
-      if processed % 100 == 0:
-        print "Consumed %d" % processed
+    doc_reprs.append((term_index, reprs))
+    processed += 1
+    print "Processed %d of %d chunks" % (processed, total)
   print "unique features: ", len(doc_count)
 
   # Work out the set of features to compute IG
@@ -319,18 +323,20 @@ def get_featuremap(paths, options):
   features = sorted(features)
   print "candidate features: ", len(features)
 
-  index_feats = dict((term_index[f],i) for i,f in enumerate(features))
-  index_terms = set(index_feats)
-
   # Initialize feature and class maps 
   num_instances = len(paths)
   feature_map = numpy.zeros((num_instances, len(features)), dtype='bool')
   
   # Populate the feature map
-  for docid, doc_repr in enumerate(doc_reprs):
-    for ind in set(doc_repr) & index_terms:
-      featid = index_feats[ind]
-      feature_map[docid, featid] = True
+  docid = 0
+  for term_index, reprs in doc_reprs:
+    index_feats = dict((term_index[f],i) for i,f in enumerate(features) if f in term_index)
+    index_terms = set(index_feats)
+    for doc_repr in reprs:
+      for ind in set(doc_repr) & index_terms:
+        featid = index_feats[ind]
+        feature_map[docid, featid] = True
+      docid += 1
   print "feature map sum:", feature_map.sum()
 
   # Convert features from character tuples to strings
