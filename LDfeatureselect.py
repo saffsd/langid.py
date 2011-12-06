@@ -188,15 +188,19 @@ def set_maxorder(arg):
   global __maxorder
   __maxorder = arg
 
-def pass1(path):
-  """
-  Read a file on disk and return the set of types it contains.
-  """
+def pass1(pathschunk):
   global __maxorder
   extractor = Tokenizer(__maxorder)
-  with open(path) as f:
-    retval = set(extractor(f.read()))
-  return retval
+  doc_count = defaultdict(int)
+  doc_reprs = []
+
+  for path in pathschunk:
+    with open(path) as f:
+      tokenset = set(extractor(f.read()))
+      doc_reprs.append(tokenset)
+      for token in tokenset:
+        doc_count[token] += 1
+  return doc_count, doc_reprs
 
 def write_weights(path, weights):
   w = dict(weights)
@@ -274,61 +278,63 @@ def get_classmaps(paths):
 def get_featuremap(paths, options):
 
   # First pass: Construct candidate set of types
-  def get_paths():
-    for i,p in enumerate(paths):
-      if i % 100 == 0:
-        print "%d..." % i
-      yield p
-    print "Done Producing!"
+  def chunk(seq, chunksize):
+    seq_iter = iter(seq)
+    while True:
+      chunk = tuple(seq_iter.next() for i in range(chunksize))
+      if len(chunk) == 0:
+        break
+      yield chunk
+
 
   pool = mp.Pool(options.job_count, set_maxorder, (options.max_order,))
 
   # Tokenize documents into sets of terms
-  termsets = pool.imap(pass1, get_paths(), chunksize=10)
+  # TODO: Dynamic selection of chunk size depending on input count
+  chunk_out = pool.imap_unordered(pass1, chunk(paths, 200), chunksize=1)
   pool.close()
   doc_count = defaultdict(int)
-  term_index = defaultdict(Enumerator())
+  term_index = {}
+  term_count = 0
   doc_reprs = disklist() # list of lists of termid-count pairs
-  count = 0
-  for termset in termsets:
-    doc_repr = []
-    for term in termset:
-      doc_count[term] += 1
-      doc_repr.append(term_index[term])
-    doc_reprs.append(set(doc_repr))
-    count += 1
-    if count % 100 == 0:
-      print "Consumed %d..." % count
-  print "Done Consuming"
-  print "unique features: ", len(term_index)
+  processed = 0
+  for count, reprs in chunk_out:
+    for term in count:
+      doc_count[term] += count[term]
+      if term not in term_index:
+        term_index[term] = term_count
+        term_count += 1
+    for doc_repr in reprs:
+      doc_reprs.append(map(term_index.get,doc_repr))
+      processed += 1
+      if processed % 100 == 0:
+        print "Consumed %d" % processed
+  print "unique features: ", len(doc_count)
 
   # Work out the set of features to compute IG
-  candidate_features = set()
+  features = set()
   for i in range(1, options.max_order+1):
     d = dict( (k, doc_count[k]) for k in doc_count if len(k) == i)
-    candidate_features |= set(sorted(d, key=d.get, reverse=True)[:options.df_tokens])
-  candidate_features = sorted(candidate_features)
-  print "candidate features: ", len(candidate_features)
+    features |= set(sorted(d, key=d.get, reverse=True)[:options.df_tokens])
+  features = sorted(features)
+  print "candidate features: ", len(features)
 
-
-  # Compute indices of features to retain
-  feats = tuple(term_index[f] for f in candidate_features)
+  index_feats = dict((term_index[f],i) for i,f in enumerate(features))
+  index_terms = set(index_feats)
 
   # Initialize feature and class maps 
   num_instances = len(paths)
-  feature_map = numpy.zeros((num_instances, len(candidate_features)), dtype='bool')
+  feature_map = numpy.zeros((num_instances, len(features)), dtype='bool')
   
-  print "doc_reprs:", len(doc_reprs)
-  print "feats:", len(feats)
-
   # Populate the feature map
   for docid, doc_repr in enumerate(doc_reprs):
-    for featid, termid in enumerate(feats):
-      feature_map[docid, featid] = termid in doc_repr
+    for ind in set(doc_repr) & index_terms:
+      featid = index_feats[ind]
+      feature_map[docid, featid] = True
   print "feature map sum:", feature_map.sum()
 
   # Convert features from character tuples to strings
-  features = [ ''.join(f) for f in candidate_features ]
+  features = [ ''.join(f) for f in features ]
   return feature_map, features
 
 if __name__ == "__main__":
