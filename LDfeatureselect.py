@@ -184,12 +184,16 @@ class InfoGain(object):
     feature_weights[nz_index] = nz_fw
     return feature_weights
 
-def set_maxorder(arg):
-  global __maxorder
-  __maxorder = arg
+def setup_pass1(maxorder, temp, buckets, locks):
+  global __maxorder, __buckets, __locks
+  __maxorder = maxorder 
+  __locks = locks
+  tempfile.tempdir = temp
+  __buckets = buckets
+
 
 def pass1(pathschunk):
-  global __maxorder
+  global __maxorder, __buckets, __locks
   extractor = Tokenizer(__maxorder)
   doc_count = defaultdict(int)
   doc_reprs = []
@@ -207,7 +211,47 @@ def pass1(pathschunk):
           token_count += 1
         doc_repr.add(token_index[token])
       doc_reprs.append(doc_repr)
-  return doc_count, token_index, doc_reprs
+
+  thandle, tpath = tempfile.mkstemp(prefix="chunk-")
+
+  with os.fdopen(thandle, 'w') as f:
+    marshal.dump((token_index, doc_reprs), f)
+
+  for key in doc_count:
+    bucket_index = hash(key) % len(__buckets)
+    with __locks[bucket_index]:
+      os.write(__buckets[bucket_index], marshal.dumps((key, doc_count[key])))
+
+  return tpath, len(doc_count)
+
+def setup_pass2(maxorder, doc_count_fd, lock):
+  global __maxorder, __doc_count, __doc_count_lock
+  __maxorder = maxorder
+  __doc_count = doc_count_fd
+  __doc_count_lock = lock
+
+def pass2(bucket):
+  """
+  Take a bucket and sum it up
+  """
+  global __maxorder, __doc_count
+  fileh = os.fdopen(bucket)
+  doc_count = defaultdict(int)
+  count = 0
+  while True:
+    try:
+      key, value = marshal.load(fileh)
+      doc_count[key] += value
+      count += 1
+    except (EOFError, ValueError, TypeError), e:
+      break
+  with __doc_count_lock:
+    for item in doc_count.iteritems():
+      os.write(__doc_count, marshal.dumps(item))
+  return count
+
+
+
 
 def write_weights(path, weights):
   w = dict(weights)
@@ -293,27 +337,64 @@ def get_featuremap(paths, options):
         break
       yield chunk
 
+  # TODO: Make this configurable
+  NUM_BUCKETS = 64
+  buckets = []
+  locks = []
+  for i in range(NUM_BUCKETS):
+    handle, path = tempfile.mkstemp(prefix="bucket-")
+    buckets.append(handle)
+    locks.append(mp.Lock())
 
-  pool = mp.Pool(options.job_count, set_maxorder, (options.max_order,))
-
-  # Tokenize documents into sets of terms
-  # TODO: Dynamic selection of chunk size depending on input count
-  chunk_size = min(len(paths) / (options.job_count*2), 1000)
-  chunk_out = pool.imap_unordered(pass1, chunk(paths, chunk_size), chunksize=1)
+  # PASS 1: Tokenize documents into sets of terms
+  pool = mp.Pool(options.job_count, setup_pass1, (options.max_order, options.temp, buckets, locks))
+  chunk_size = min(len(paths) / (options.job_count*2), 100)
+  pass1_out = pool.imap_unordered(pass1, chunk(paths, chunk_size), chunksize=1)
   pool.close()
   doc_count = defaultdict(int)
-  doc_reprs = disklist() # list of lists of termid-count pairs
-  processed = 0
   total = len(paths)/chunk_size + (0 if len(paths)%chunk_size else 1)
-
   print "chunk size: %d (%d chunks)" % (chunk_size, total)
-  for count, term_index, reprs in chunk_out:
-    for term in count:
-      doc_count[term] += count[term]
-    doc_reprs.append((term_index, reprs))
-    processed += 1
-    print "Processed %d of %d chunks" % (processed, total)
-  print "unique features: ", len(doc_count)
+
+  chunk_paths = []
+  wrotekeys = 0
+  for i, (path, keycount) in enumerate(pass1_out):
+    chunk_paths.append(path)
+    print "tokenized chunk (%d/%d)" % (i+1,total)
+    wrotekeys += keycount
+
+  print "wrote a total of %d keys" % wrotekeys 
+
+  # rewind all the file descriptors
+  for bucket in buckets:
+    os.lseek(bucket, 0, os.SEEK_SET)
+
+
+  # PASS 2: Compile document counts
+  # As discussed with richard. We will project each set of k-v pairs into
+  # one of n files based on the hash of k. each file then consitutes a 
+  # portion of the final dictionary we are interested in.
+  doc_count_fd, path = tempfile.mkstemp(prefix="doccount-")
+  pool = mp.Pool(options.job_count, setup_pass2, (options.max_order, doc_count_fd, mp.Lock()))
+  pass2_out = pool.imap_unordered(pass2, buckets, chunksize=1)
+  pool.close()
+
+  readkeys = 0
+  for i, x in enumerate(pass2_out):
+    readkeys += x
+    print "processed bucket (%d/%d)" % (i+1, NUM_BUCKETS)
+
+  print "read back a total of %d keys (%d short)" % ( readkeys, wrotekeys-readkeys)
+
+  doc_count = {}
+  with os.fdopen(doc_count_fd) as f:
+    f.seek(0)
+    while True:
+      try:
+        key, value = marshal.load(f)
+        doc_count[key] = value
+      except (EOFError, ValueError, TypeError):
+        break
+  print "unique features:", len(doc_count)
 
   # Work out the set of features to compute IG
   features = set()
@@ -329,8 +410,10 @@ def get_featuremap(paths, options):
   
   # Populate the feature map
   docid = 0
-  for term_index, reprs in doc_reprs:
-    index_feats = dict((term_index[f],i) for i,f in enumerate(features) if f in term_index)
+  for chunk_path in chunk_paths:
+    with open(chunk_path) as f:
+      ti, reprs = marshal.load(f)
+    index_feats = dict((ti[f],i) for i,f in enumerate(features) if f in ti)
     index_terms = set(index_feats)
     for doc_repr in reprs:
       for ind in set(doc_repr) & index_terms:
@@ -347,10 +430,11 @@ if __name__ == "__main__":
   parser = optparse.OptionParser()
   parser.add_option("-o","--output", dest="outfile", help="output features to FILE", metavar="FILE")
   parser.add_option("-c","--corpus", dest="corpus", help="read corpus from DIR", metavar="DIR")
-  parser.add_option("-j","--jobs", dest="job_count", type="int", help="number of processes to use", default=mp.cpu_count())
+  parser.add_option("-j","--jobs", dest="job_count", type="int", help="number of processes to use", default=mp.cpu_count()+4)
   parser.add_option("-w","--weights",dest="weights", help="output weights to DIR (optional)", metavar="DIR")
   parser.add_option("-s","--save",dest="save", help="pickle an intermediate model to FILE", metavar="FILE")
   parser.add_option("-l","--load",dest="load", help="load an intermediate model from FILE", metavar="FILE")
+  parser.add_option("-t","--temp",dest="temp", help="store temporary files in DIR", metavar="DIR", default=tempfile.gettempdir())
   parser.add_option("--max_order", dest="max_order", type="int", help="highest n-gram order to use", default=MAX_NGRAM_ORDER)
   parser.add_option("--feats_per_lang", dest="feats_per_lang", type="int", help="number of features to retain for each language", default=FEATURES_PER_LANG)
   parser.add_option("--df_tokens", dest="df_tokens", type="int", help="number of tokens to consider for each n-gram order", 
@@ -380,8 +464,12 @@ if __name__ == "__main__":
   else:
     output_path = 'a.LDfeatures'
 
+  # set tempdir
+  tempfile.tempdir = options.temp
+
   # display paths
   print "output path:", output_path
+  print "temp path:", options.temp
   if options.corpus:
     print "corpus path:", options.corpus
   if options.weights:
@@ -408,6 +496,7 @@ if __name__ == "__main__":
 
     cm_domain, cm_lang, lang_index = get_classmaps(paths)
     fm, features = get_featuremap(paths, options)
+  raise ValueError
 
   # Save tokenized representaion
   if options.save:
