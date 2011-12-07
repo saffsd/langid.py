@@ -250,7 +250,24 @@ def pass2(bucket):
       os.write(__doc_count, marshal.dumps(item))
   return count
 
+def setup_pass3(features):
+  global __features
+  __features = features
 
+def pass3(chunk_path):
+  global __features
+  docid = 0
+  with open(chunk_path) as f:
+    ti, reprs = marshal.load(f)
+  feature_map = numpy.zeros((len(reprs), len(__features)), dtype='bool')
+  index_feats = dict((ti[f],i) for i,f in enumerate(__features) if f in ti)
+  index_terms = set(index_feats)
+  for doc_repr in reprs:
+    for ind in set(doc_repr) & index_terms:
+      featid = index_feats[ind]
+      feature_map[docid, featid] = True
+    docid += 1
+  return feature_map
 
 
 def write_weights(path, weights):
@@ -404,22 +421,11 @@ def get_featuremap(paths, options):
   features = sorted(features)
   print "candidate features: ", len(features)
 
-  # Initialize feature and class maps 
-  num_instances = len(paths)
-  feature_map = numpy.zeros((num_instances, len(features)), dtype='bool')
-  
   # Populate the feature map
-  docid = 0
-  for chunk_path in chunk_paths:
-    with open(chunk_path) as f:
-      ti, reprs = marshal.load(f)
-    index_feats = dict((ti[f],i) for i,f in enumerate(features) if f in ti)
-    index_terms = set(index_feats)
-    for doc_repr in reprs:
-      for ind in set(doc_repr) & index_terms:
-        featid = index_feats[ind]
-        feature_map[docid, featid] = True
-      docid += 1
+  pool = mp.Pool(options.job_count, setup_pass3, (features,))
+  pass2_out = pool.imap_unordered(pass3, chunk_paths, chunksize=1)
+  pool.close()
+  feature_map = numpy.vstack(pass2_out)
   print "feature map sum:", feature_map.sum()
 
   # Convert features from character tuples to strings
@@ -496,7 +502,6 @@ if __name__ == "__main__":
 
     cm_domain, cm_lang, lang_index = get_classmaps(paths)
     fm, features = get_featuremap(paths, options)
-  raise ValueError
 
   # Save tokenized representaion
   if options.save:
