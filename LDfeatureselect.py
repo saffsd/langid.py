@@ -40,6 +40,7 @@ or implied, of the copyright holder.
 MAX_NGRAM_ORDER = 4 # largest order of n-grams to consider
 TOP_DOC_FREQ = 15000 # number of tokens to consider for each order
 FEATURES_PER_LANG = 300 # number of features to select for each language
+NUM_BUCKETS = 64 # number of buckets to use in k-v pair generation
 
 import os, sys, optparse
 import collections
@@ -259,6 +260,7 @@ def pass3(chunk_path):
   docid = 0
   with open(chunk_path) as f:
     ti, reprs = marshal.load(f)
+  os.remove(chunk_path) # delete consumed file
   feature_map = numpy.zeros((len(reprs), len(__features)), dtype='bool')
   index_feats = dict((ti[f],i) for i,f in enumerate(__features) if f in ti)
   index_terms = set(index_feats)
@@ -355,12 +357,13 @@ def get_featuremap(paths, options):
       yield chunk
 
   # TODO: Make this configurable
-  NUM_BUCKETS = 64
   buckets = []
   locks = []
+  b_paths = []
   for i in range(NUM_BUCKETS):
     handle, path = tempfile.mkstemp(prefix="bucket-")
     buckets.append(handle)
+    b_paths.append(path)
     locks.append(mp.Lock())
 
   # PASS 1: Tokenize documents into sets of terms
@@ -390,7 +393,7 @@ def get_featuremap(paths, options):
   # As discussed with richard. We will project each set of k-v pairs into
   # one of n files based on the hash of k. each file then consitutes a 
   # portion of the final dictionary we are interested in.
-  doc_count_fd, path = tempfile.mkstemp(prefix="doccount-")
+  doc_count_fd, doc_count_path = tempfile.mkstemp(prefix="doccount-")
   pool = mp.Pool(options.job_count, setup_pass2, (options.max_order, doc_count_fd, mp.Lock()))
   pass2_out = pool.imap_unordered(pass2, buckets, chunksize=1)
   pool.close()
@@ -402,6 +405,10 @@ def get_featuremap(paths, options):
 
   print "read back a total of %d keys (%d short)" % ( readkeys, wrotekeys-readkeys)
 
+  # delete the bucket files
+  for path in b_paths:
+    os.remove(path)
+
   doc_count = {}
   with os.fdopen(doc_count_fd) as f:
     f.seek(0)
@@ -412,6 +419,7 @@ def get_featuremap(paths, options):
       except (EOFError, ValueError, TypeError):
         break
   print "unique features:", len(doc_count)
+  os.remove(doc_count_path)
 
   # Work out the set of features to compute IG
   features = set()
@@ -443,8 +451,8 @@ if __name__ == "__main__":
   parser.add_option("-t","--temp",dest="temp", help="store temporary files in DIR", metavar="DIR", default=tempfile.gettempdir())
   parser.add_option("--max_order", dest="max_order", type="int", help="highest n-gram order to use", default=MAX_NGRAM_ORDER)
   parser.add_option("--feats_per_lang", dest="feats_per_lang", type="int", help="number of features to retain for each language", default=FEATURES_PER_LANG)
-  parser.add_option("--df_tokens", dest="df_tokens", type="int", help="number of tokens to consider for each n-gram order", 
-  default=TOP_DOC_FREQ)
+  parser.add_option("--df_tokens", dest="df_tokens", type="int", help="number of tokens to consider for each n-gram order", default=TOP_DOC_FREQ)
+  parser.add_option("--buckets", dest="buckets", type="int", help="numer of buckets to use in k-v pair generation", default=NUM_BUCKETS)
 
   options, args = parser.parse_args()
 
@@ -485,8 +493,6 @@ if __name__ == "__main__":
   if options.save:
     print "save intermediate:", options.save
 
-
-
   # Obtain tokenized representation
   if options.load:
     with open(options.load) as f:
@@ -509,8 +515,6 @@ if __name__ == "__main__":
       cPickle.dump((features, lang_index, fm, cm_domain, cm_lang), f)
       print 'wrote intermediate model: "%s"' % options.save
 
-  #features = [ 'f%5d' % f for f in range(0,45256)]
-  #fm = numpy.empty((cm_domain.shape[0], len(features)), dtype='bool')
   # Compute LD from tokenized representation
   try:
     final_feature_set = select_LD_features(features, lang_index, fm, cm_domain, cm_lang, options)
