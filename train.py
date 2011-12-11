@@ -39,6 +39,7 @@ import array
 import numpy as np
 import multiprocessing as mp
 from collections import deque, defaultdict
+from contextlib import closing
 
 class Scanner(object):
   alphabet = map(chr, range(1<<8))
@@ -150,6 +151,38 @@ class Scanner(object):
       for key in self.output.get(state, []):
         yield key
 
+def chunk(seq, chunksize):
+  """
+  Break a sequence into chunks not exceeeding a predetermined size
+  """
+  seq_iter = iter(seq)
+  while True:
+    chunk = tuple(seq_iter.next() for i in range(chunksize))
+    if len(chunk) == 0:
+      break
+    yield chunk
+
+def unmarshal_iter(f):
+  """
+  Iterator over a file object, which unmarshals
+  item by item.
+  """
+  while True:
+    try:
+      yield marshal.load(f)
+    except EOFError:
+      break
+
+def index(seq):
+  """
+  Build an index for a sequence of items. Assumes
+  that the items in the sequence are unique.
+  @param seq the sequence to index
+  @returns a dictionary from item to position in the sequence
+  """
+  return dict((k,v) for (v,k) in enumerate(seq))
+
+
 def set_nmarr(arg):
   """
   Set the global next-move array used by the aho-corasick scanner
@@ -172,30 +205,98 @@ def pass2(path):
   return c
 
 
-def nb_learn(fm, cm):
+def learn_pc(cm):
+  """
+  @param cm class map
+  @returns nb_pc: log(P(C))
+  """
+  pc = np.log(cm.sum(0))
+  nb_pc = array.array('d', pc)
+  return nb_pc
+
+def learn_ptc(fm, cm):
   """
   Learn naive bayes parameters from a feature map and 
   a class map. We use the multinomial event model.
   @param fm feature map
   @param cm class map
-  @returns pc: log(P(C)) ptc: log(P(t|C))
+  @returns nb_ptc: log(P(t|C))
   """
   tot_cl = cm.shape[1]
   v = fm.shape[1]
   prod = np.dot(fm.T, cm)
-  pc = np.log(cm.sum(0))
   ptc = np.log(1 + prod) - np.log(v + prod.sum(0))
-  return pc, ptc
+  nb_ptc = array.array('d')
+  for term_dist in ptc.tolist():
+    nb_ptc.extend(term_dist)
+  return nb_ptc
 
-def index(seq):
-  """
-  Build an index for a sequence of items. Assumes
-  that the items in the sequence are unique.
-  @param seq the sequence to index
-  @returns a dictionary from item to position in the sequence
-  """
-  return dict((k,v) for (v,k) in enumerate(seq))
+def generate_cm(paths, langs):
+  num_instances = len(paths)
+  num_classes = len(langs)
 
+  # Generate the class map
+  lang_index = index(sorted(langs))
+  cm = np.zeros((num_instances, num_classes), dtype='bool')
+  for docid, path in enumerate(paths):
+    lang = os.path.basename(os.path.dirname(path))
+    cm[docid, lang_index[lang]] = True
+  nb_classes = sorted(lang_index, key=lang_index.get)
+  print "generated class map"
+
+  return nb_classes, cm
+
+def generate_fm(paths, nb_features, tk_nextmove, state2feat):
+  num_instances = len(paths)
+  num_features = len(nb_features)
+
+  # Generate the feature map
+  fm = np.zeros((num_instances, num_features), dtype='int')
+  output_states = set(state2feat)
+  nm_arr = mp.Array('i', tk_nextmove, lock=False)
+  with closing( mp.Pool(options.job_count, set_nmarr, (nm_arr,)) 
+              ) as pool:
+    statesets = pool.imap(pass2, paths)
+
+  for docid, stateset in enumerate(statesets):
+    # Process each stateset
+    for state in (set(stateset) & output_states):
+      for f_id in state2feat[state]:
+        fm[docid, f_id] += stateset[state]
+  print "generated feature map"
+  return fm
+
+def read_corpus(path):
+  print "data directory: ", path
+  langs = set()
+  paths = []
+  for dirpath, dirnames, filenames in os.walk(path):
+    for f in filenames:
+      paths.append(os.path.join(dirpath, f))
+      langs.add(os.path.basename(dirpath))
+  print "found %d files" % len(paths)
+  print "langs(%d): %s" % (len(langs), sorted(langs))
+  return paths, langs
+
+def build_scanner(nb_features):
+  feat_index = index(nb_features)
+
+  # Build the actual scanner
+  print "building scanner"
+  scanner = Scanner(nb_features)
+  tk_nextmove, raw_output = scanner.__getstate__()
+
+  # tk_output is the output function of the scanner. It should generate indices into
+  # the feature space directly, as this saves a lookup
+  tk_output = {}
+  for key in raw_output:
+    tk_output[key] = tuple(feat_index[v] for v in raw_output[key])
+  
+  # Map the scanner raw output directly into feature indexes
+  state2feat = {}
+  for k,v in raw_output.items():
+    state2feat[k] = tuple(feat_index[f] for f in v)
+  return tk_nextmove, tk_output, state2feat
 
 if __name__ == "__main__":
   parser = optparse.OptionParser()
@@ -205,75 +306,15 @@ if __name__ == "__main__":
   parser.add_option("-j","--jobs", dest="job_count", type="int", help="number of processes to use", default=mp.cpu_count())
   options, args = parser.parse_args()
   
-  print "data directory: ", options.corpus 
-  langs = set()
-  paths = []
-  for dirpath, dirnames, filenames in os.walk(options.corpus):
-    for f in filenames:
-      paths.append(os.path.join(dirpath, f))
-      langs.add(os.path.basename(dirpath))
-  print "found %d files" % len(paths)
-  print "langs(%d): %s" % (len(langs), sorted(langs))
-
+  paths, langs = read_corpus(options.corpus)
   nb_features = map(eval, open(options.infile))
-  feat_index = index(nb_features)
+  nb_classes, cm = generate_cm(paths, langs)
+  tk_nextmove, tk_output, state2feat = build_scanner(nb_features)
+  fm = generate_fm(paths, nb_features, tk_nextmove, state2feat)
+  nb_pc = learn_pc(cm)
+  nb_ptc = learn_ptc(fm, cm)
 
-  # Build the actual scanner
-  print "building scanner"
-  scanner = Scanner(nb_features)
-  tk_nextmove, raw_output = scanner.__getstate__()
-
-  # Map the scanner raw output directly into feature indexes
-  state2feat = {}
-  for k,v in raw_output.items():
-    state2feat[k] = tuple(feat_index[f] for f in v)
-    
-  nm_arr = mp.Array('i', tk_nextmove, lock=False)
-  pool = mp.Pool(options.job_count, set_nmarr, (nm_arr,))
-  print "spawned pool of %d processes" % options.job_count
-
-  num_instances = len(paths)
-  num_classes = len(langs)
-  num_features = len(nb_features)
-
-  # Generate the class map
-  lang_index = index(sorted(langs))
-  cm = np.zeros((num_instances, num_classes), dtype='bool')
-  for docid, path in enumerate(paths):
-    lang = os.path.basename(os.path.dirname(path))
-    cm[docid, lang_index[lang]] = True
-  print "generated class map"
-  
-  # Generate the feature map
-  def get_paths():
-    for i,p in enumerate(paths):
-      if i % 100 == 0:
-        print "%d..." % i
-      yield p
-  fm = np.zeros((num_instances, num_features), dtype='int')
-  output_states = set(state2feat)
-  statesets = pool.imap(pass2, get_paths())
-  for docid, stateset in enumerate(statesets):
-    # Process each stateset
-    for state in (set(stateset) & output_states):
-      for f_id in state2feat[state]:
-        fm[docid, f_id] += stateset[state]
-  pool.close()
-  print "generated feature map"
-
-  pc, ptc = nb_learn(fm, cm)
-  nb_classes = sorted(lang_index, key=lang_index.get)
-  nb_pc = array.array('d', pc)
-  nb_ptc = array.array('d')
-  for term_dist in ptc.tolist():
-    nb_ptc.extend(term_dist)
-
-  # tk_output is the output function of the scanner. It should generate indices into
-  # the feature space directly, as this saves a lookup
-  tk_output = {}
-  for key in raw_output:
-    tk_output[key] = tuple(feat_index[v] for v in raw_output[key])
-  
+  # output the model
   model = nb_ptc, nb_pc, nb_classes, tk_nextmove, tk_output
   string = base64.b64encode(bz2.compress(cPickle.dumps(model)))
   with open(options.outfile, 'w') as f:
