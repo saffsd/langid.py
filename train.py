@@ -38,6 +38,8 @@ import os, sys, optparse
 import array
 import numpy as np
 import multiprocessing as mp
+import tempfile
+import marshal
 from collections import deque, defaultdict
 from contextlib import closing
 
@@ -162,6 +164,13 @@ def chunk(seq, chunksize):
       break
     yield chunk
 
+def offsets(chunks):
+  # Work out the path chunk start offsets
+  chunk_offsets = [0]
+  for c in chunks:
+    chunk_offsets.append(chunk_offsets[-1] + len(c))
+  return chunk_offsets
+
 def unmarshal_iter(f):
   """
   Iterator over a file object, which unmarshals
@@ -183,26 +192,77 @@ def index(seq):
   return dict((k,v) for (v,k) in enumerate(seq))
 
 
-def set_nmarr(arg):
+def setup_pass1(nm_arr, output_states, buckets, bucket_map, locks):
   """
   Set the global next-move array used by the aho-corasick scanner
   """
-  global nm_arr
-  nm_arr = arg
+  global __nm_arr, __output_states, __buckets, __bucket_map, __locks
+  __nm_arr = nm_arr
+  __output_states = output_states
+  __buckets = buckets
+  __bucket_map = bucket_map
+  __locks = locks
 
-def pass2(path):
+def state_trace(path):
   """
   Returns counts of how often each state was entered
   """
-  global nm_arr
+  global __nm_arr
   c = defaultdict(int)
   state = 0
   with open(path) as f:
     text = f.read()
     for letter in map(ord,text):
-      state = nm_arr[(state << 8) + letter]
+      state = __nm_arr[(state << 8) + letter]
       c[state] += 1
   return c
+
+def pass1(arg):
+  """
+  Tokenize documents and do counts for each feature
+  Split this into buckets chunked over features rather than documents
+  """
+  global __output_states, __buckets, __bucket_map, __locks
+  chunk_id, chunk_paths = arg
+  term_freq = defaultdict(int)
+
+  for doc_id, path in enumerate(chunk_paths):
+    count = state_trace(path)
+    for state in (set(count) & output_states):
+      for f_id in state2feat[state]:
+        term_freq[doc_id, f_id] += count[state]
+
+  for doc_id, f_id in term_freq:
+    bucket_index = __bucket_map[f_id]
+    count = term_freq[doc_id, f_id]
+    item = ( f_id, chunk_id, doc_id, count )
+    with __locks[bucket_index]:
+      os.write(__buckets[bucket_index], marshal.dumps(item))
+
+  return len(term_freq)
+
+def setup_pass2(cm, chunk_offsets, num_instances):
+  global __cm, __chunk_offsets, __num_instances
+  __cm = cm
+  __chunk_offsets = chunk_offsets
+  __num_instances = num_instances
+
+def pass2(arg):
+  """
+  Take a bucket, form a feature map, learn the nb_ptc for it.
+  """
+  global __cm, __chunk_offsets, __num_instances
+  num_feats, base_f_id, bucket = arg
+  fm = np.zeros((__num_instances, num_feats), dtype='int')
+
+  with os.fdopen(bucket) as fileh:
+    for f_id, chunk_id, doc_id, count in unmarshal_iter(fileh):
+      doc_index = __chunk_offsets[chunk_id] + doc_id
+      f_index = f_id - base_f_id
+      fm[doc_index, f_index] = count
+
+  ptc = learn_ptc(fm, __cm)
+  return ptc
 
 
 def learn_pc(cm):
@@ -226,10 +286,7 @@ def learn_ptc(fm, cm):
   v = fm.shape[1]
   prod = np.dot(fm.T, cm)
   ptc = np.log(1 + prod) - np.log(v + prod.sum(0))
-  nb_ptc = array.array('d')
-  for term_dist in ptc.tolist():
-    nb_ptc.extend(term_dist)
-  return nb_ptc
+  return ptc
 
 def generate_cm(paths, langs):
   num_instances = len(paths)
@@ -246,25 +303,57 @@ def generate_cm(paths, langs):
 
   return nb_classes, cm
 
-def generate_fm(paths, nb_features, tk_nextmove, state2feat):
+FEATS_PER_CHUNK = 100
+def generate_ptc(paths, nb_features, tk_nextmove, state2feat, cm):
   num_instances = len(paths)
   num_features = len(nb_features)
 
   # Generate the feature map
   fm = np.zeros((num_instances, num_features), dtype='int')
-  output_states = set(state2feat)
   nm_arr = mp.Array('i', tk_nextmove, lock=False)
-  with closing( mp.Pool(options.job_count, set_nmarr, (nm_arr,)) 
-              ) as pool:
-    statesets = pool.imap(pass2, paths)
+  output_states = set(state2feat)
 
-  for docid, stateset in enumerate(statesets):
-    # Process each stateset
-    for state in (set(stateset) & output_states):
-      for f_id in state2feat[state]:
-        fm[docid, f_id] += stateset[state]
-  print "generated feature map"
-  return fm
+
+  chunk_size = min(len(paths) / (options.job_count*2), 100)
+  path_chunks = list(chunk(paths, chunk_size))
+  feat_chunks = list(chunk(nb_features, FEATS_PER_CHUNK))
+
+  buckets = []
+  locks = []
+  b_paths = []
+  bucket_map = {}
+  for chunk_id, feat_chunk in enumerate(feat_chunks):
+    for feat in feat_chunk:
+      bucket_map[feat] = chunk_id
+
+    handle, path = tempfile.mkstemp(prefix="bucket-")
+    buckets.append(handle)
+    b_paths.append(path)
+    locks.append(mp.Lock())
+
+
+  with closing( mp.Pool(options.job_count, setup_pass1, (nm_arr, output_states, buckets, bucket_map, locks)) 
+              ) as pool:
+    pass1_out = pool.imap_unordered(pass1, enumerate(path_chunks))
+
+  for bucket in buckets:
+    os.lseek(bucket, 0, os.SEEK_SET)
+
+  f_chunk_sizes = map(len, feat_chunks)
+  f_chunk_offsets = offsets(feat_chunks)
+  with closing( mp.Pool(options.job_count, setup_pass2, (cm, offsets(path_chunks), num_instances)) 
+              ) as pool:
+    pass2_out = pool.imap(pass2, zip(f_chunk_sizes, f_chunk_offsets, buckets))
+
+  for path in b_paths:
+    os.remove(path)
+  
+  ptc = np.vstack(pass2_out)
+
+  nb_ptc = array.array('d')
+  for term_dist in ptc.tolist():
+    nb_ptc.extend(term_dist)
+  return ptc
 
 def read_corpus(path):
   print "data directory: ", path
@@ -304,15 +393,17 @@ if __name__ == "__main__":
   parser.add_option("-c","--corpus", dest="corpus", help="read corpus from DIR", metavar="DIR")
   parser.add_option("-i","--input", dest="infile", help="read features from FILE", metavar="FILE")
   parser.add_option("-j","--jobs", dest="job_count", type="int", help="number of processes to use", default=mp.cpu_count())
+  parser.add_option("-t","--temp",dest="temp", help="store temporary files in DIR", metavar="DIR", default=tempfile.gettempdir())
   options, args = parser.parse_args()
   
+  tempfile.tempdir = options.temp
+
   paths, langs = read_corpus(options.corpus)
   nb_features = map(eval, open(options.infile))
   nb_classes, cm = generate_cm(paths, langs)
   tk_nextmove, tk_output, state2feat = build_scanner(nb_features)
-  fm = generate_fm(paths, nb_features, tk_nextmove, state2feat)
+  nb_ptc = generate_ptc(paths, nb_features, tk_nextmove, state2feat, cm)
   nb_pc = learn_pc(cm)
-  nb_ptc = learn_ptc(fm, cm)
 
   # output the model
   model = nb_ptc, nb_pc, nb_classes, tk_nextmove, tk_output
