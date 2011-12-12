@@ -192,16 +192,18 @@ def index(seq):
   return dict((k,v) for (v,k) in enumerate(seq))
 
 
-def setup_pass1(nm_arr, output_states, buckets, bucket_map, locks):
+def setup_pass1(nm_arr, output_states, state2feat, buckets, bucket_map, locks):
   """
   Set the global next-move array used by the aho-corasick scanner
   """
-  global __nm_arr, __output_states, __buckets, __bucket_map, __locks
+  global __nm_arr, __output_states, __state2feat, __buckets, __bucket_map, __locks
   __nm_arr = nm_arr
   __output_states = output_states
+  __state2feat = state2feat
   __buckets = buckets
   __bucket_map = bucket_map
   __locks = locks
+
 
 def state_trace(path):
   """
@@ -222,14 +224,14 @@ def pass1(arg):
   Tokenize documents and do counts for each feature
   Split this into buckets chunked over features rather than documents
   """
-  global __output_states, __buckets, __bucket_map, __locks
+  global __output_states, __state2feat, __buckets, __bucket_map, __locks
   chunk_id, chunk_paths = arg
   term_freq = defaultdict(int)
 
   for doc_id, path in enumerate(chunk_paths):
     count = state_trace(path)
-    for state in (set(count) & output_states):
-      for f_id in state2feat[state]:
+    for state in (set(count) & __output_states):
+      for f_id in __state2feat[state]:
         term_freq[doc_id, f_id] += count[state]
 
   for doc_id, f_id in term_freq:
@@ -255,14 +257,16 @@ def pass2(arg):
   num_feats, base_f_id, bucket = arg
   fm = np.zeros((__num_instances, num_feats), dtype='int')
 
+  read_count = 0
   with os.fdopen(bucket) as fileh:
     for f_id, chunk_id, doc_id, count in unmarshal_iter(fileh):
       doc_index = __chunk_offsets[chunk_id] + doc_id
       f_index = f_id - base_f_id
       fm[doc_index, f_index] = count
+      read_count += 1
 
   ptc = learn_ptc(fm, __cm)
-  return ptc
+  return read_count, ptc
 
 
 def learn_pc(cm):
@@ -285,6 +289,11 @@ def learn_ptc(fm, cm):
   tot_cl = cm.shape[1]
   v = fm.shape[1]
   prod = np.dot(fm.T, cm)
+  # TODO: the smoothing step is troublesome because of
+  # prod.sum(0), which needs to be computed over all
+  # the chunks instead of over individual chunks.
+  # Need to work out if we have a theoretical problem with
+  # chunking this.
   ptc = np.log(1 + prod) - np.log(v + prod.sum(0))
   return ptc
 
@@ -311,12 +320,13 @@ def generate_ptc(paths, nb_features, tk_nextmove, state2feat, cm):
   # Generate the feature map
   fm = np.zeros((num_instances, num_features), dtype='int')
   nm_arr = mp.Array('i', tk_nextmove, lock=False)
-  output_states = set(state2feat)
 
 
   chunk_size = min(len(paths) / (options.job_count*2), 100)
   path_chunks = list(chunk(paths, chunk_size))
   feat_chunks = list(chunk(nb_features, FEATS_PER_CHUNK))
+
+  feat_index = index(nb_features)
 
   buckets = []
   locks = []
@@ -324,7 +334,7 @@ def generate_ptc(paths, nb_features, tk_nextmove, state2feat, cm):
   bucket_map = {}
   for chunk_id, feat_chunk in enumerate(feat_chunks):
     for feat in feat_chunk:
-      bucket_map[feat] = chunk_id
+      bucket_map[feat_index[feat]] = chunk_id
 
     handle, path = tempfile.mkstemp(prefix="bucket-")
     buckets.append(handle)
@@ -332,28 +342,38 @@ def generate_ptc(paths, nb_features, tk_nextmove, state2feat, cm):
     locks.append(mp.Lock())
 
 
-  with closing( mp.Pool(options.job_count, setup_pass1, (nm_arr, output_states, buckets, bucket_map, locks)) 
-              ) as pool:
-    pass1_out = pool.imap_unordered(pass1, enumerate(path_chunks))
+  output_states = set(state2feat)
+  #with closing( mp.Pool(options.job_count, setup_pass1, (nm_arr, output_states, state2feat, buckets, bucket_map, locks)) 
+  #            ) as pool:
+  #  pass1_out = pool.imap_unordered(pass1, enumerate(path_chunks))
+  setup_pass1(nm_arr, output_states, state2feat, buckets, bucket_map, locks)
+  pass1_out = map(pass1, enumerate(path_chunks))
+
+  print "wrote a total of %d keys" % sum(pass1_out)
 
   for bucket in buckets:
     os.lseek(bucket, 0, os.SEEK_SET)
 
   f_chunk_sizes = map(len, feat_chunks)
   f_chunk_offsets = offsets(feat_chunks)
-  with closing( mp.Pool(options.job_count, setup_pass2, (cm, offsets(path_chunks), num_instances)) 
-              ) as pool:
-    pass2_out = pool.imap(pass2, zip(f_chunk_sizes, f_chunk_offsets, buckets))
+  #with closing( mp.Pool(options.job_count, setup_pass2, (cm, offsets(path_chunks), num_instances)) 
+  #            ) as pool:
+  #  pass2_out = pool.imap(pass2, zip(f_chunk_sizes, f_chunk_offsets, buckets))
+  setup_pass2(cm, offsets(path_chunks), num_instances)
+  pass2_out = map(pass2, zip(f_chunk_sizes, f_chunk_offsets, buckets))
+
+  reads, pass2_out = zip(*pass2_out)
 
   for path in b_paths:
     os.remove(path)
-  
+
+  print "read a total of %d keys" % sum(reads)
   ptc = np.vstack(pass2_out)
 
   nb_ptc = array.array('d')
   for term_dist in ptc.tolist():
     nb_ptc.extend(term_dist)
-  return ptc
+  return nb_ptc
 
 def read_corpus(path):
   print "data directory: ", path
