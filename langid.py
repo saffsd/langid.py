@@ -145,7 +145,8 @@ try:
     pd = pdc + nb_pc
     # select the most likely class
     cl = np.argmax(pd)
-    # TODO: turn this value back into a probability?
+    # turn the pd into a probability distribution
+    pd /= pd.sum()
     return cl, pd[cl]
     
   logger.debug('using numpy implementation')
