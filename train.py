@@ -265,8 +265,8 @@ def pass2(arg):
       fm[doc_index, f_index] = count
       read_count += 1
 
-  ptc = learn_ptc(fm, __cm)
-  return read_count, ptc
+  prod = np.dot(fm.T, __cm)
+  return read_count, prod
 
 
 def learn_pc(cm):
@@ -277,25 +277,6 @@ def learn_pc(cm):
   pc = np.log(cm.sum(0))
   nb_pc = array.array('d', pc)
   return nb_pc
-
-def learn_ptc(fm, cm):
-  """
-  Learn naive bayes parameters from a feature map and 
-  a class map. We use the multinomial event model.
-  @param fm feature map
-  @param cm class map
-  @returns nb_ptc: log(P(t|C))
-  """
-  tot_cl = cm.shape[1]
-  v = fm.shape[1]
-  prod = np.dot(fm.T, cm)
-  # TODO: the smoothing step is troublesome because of
-  # prod.sum(0), which needs to be computed over all
-  # the chunks instead of over individual chunks.
-  # Need to work out if we have a theoretical problem with
-  # chunking this.
-  ptc = np.log(1 + prod) - np.log(v + prod.sum(0))
-  return ptc
 
 def generate_cm(paths, langs):
   num_instances = len(paths)
@@ -318,9 +299,7 @@ def generate_ptc(paths, nb_features, tk_nextmove, state2feat, cm):
   num_features = len(nb_features)
 
   # Generate the feature map
-  fm = np.zeros((num_instances, num_features), dtype='int')
   nm_arr = mp.Array('i', tk_nextmove, lock=False)
-
 
   chunk_size = min(len(paths) / (options.job_count*2), 100)
   path_chunks = list(chunk(paths, chunk_size))
@@ -343,11 +322,9 @@ def generate_ptc(paths, nb_features, tk_nextmove, state2feat, cm):
 
 
   output_states = set(state2feat)
-  #with closing( mp.Pool(options.job_count, setup_pass1, (nm_arr, output_states, state2feat, buckets, bucket_map, locks)) 
-  #            ) as pool:
-  #  pass1_out = pool.imap_unordered(pass1, enumerate(path_chunks))
-  setup_pass1(nm_arr, output_states, state2feat, buckets, bucket_map, locks)
-  pass1_out = map(pass1, enumerate(path_chunks))
+  with closing( mp.Pool(options.job_count, setup_pass1, (nm_arr, output_states, state2feat, buckets, bucket_map, locks)) 
+              ) as pool:
+    pass1_out = pool.imap_unordered(pass1, enumerate(path_chunks))
 
   print "wrote a total of %d keys" % sum(pass1_out)
 
@@ -356,11 +333,9 @@ def generate_ptc(paths, nb_features, tk_nextmove, state2feat, cm):
 
   f_chunk_sizes = map(len, feat_chunks)
   f_chunk_offsets = offsets(feat_chunks)
-  #with closing( mp.Pool(options.job_count, setup_pass2, (cm, offsets(path_chunks), num_instances)) 
-  #            ) as pool:
-  #  pass2_out = pool.imap(pass2, zip(f_chunk_sizes, f_chunk_offsets, buckets))
-  setup_pass2(cm, offsets(path_chunks), num_instances)
-  pass2_out = map(pass2, zip(f_chunk_sizes, f_chunk_offsets, buckets))
+  with closing( mp.Pool(options.job_count, setup_pass2, (cm, offsets(path_chunks), num_instances)) 
+              ) as pool:
+    pass2_out = pool.imap(pass2, zip(f_chunk_sizes, f_chunk_offsets, buckets))
 
   reads, pass2_out = zip(*pass2_out)
 
@@ -368,7 +343,8 @@ def generate_ptc(paths, nb_features, tk_nextmove, state2feat, cm):
     os.remove(path)
 
   print "read a total of %d keys" % sum(reads)
-  ptc = np.vstack(pass2_out)
+  prod = np.vstack(pass2_out)
+  ptc = np.log(1 + prod) - np.log(num_features + prod.sum(0))
 
   nb_ptc = array.array('d')
   for term_dist in ptc.tolist():
