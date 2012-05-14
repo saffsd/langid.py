@@ -180,6 +180,9 @@ def classify(instance):
   """
   Classify an instance.
   """
+  if isinstance(instance, unicode):
+    instance = instance.encode('utf8')
+
   if __USE_NUMPY__:
     fv = tokenize(instance, 
           np.zeros((nb_numfeats,), dtype='uint32'))
