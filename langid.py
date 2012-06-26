@@ -194,17 +194,54 @@ def classify(instance):
   pred = nb_classes[cl]
   return pred, conf
 
+# Based on http://www.ubacoda.com/index.php?p=8
 query_form = """
 <html>
-<head>
-<title>Language Identifier</title>
-</head>
-<body>
-<form method=post>
-<textarea name="q" cols=40 rows=6></textarea></br>
-<input type=submit value="submit">
-</form>
-</body>
+  <head>
+    <meta http-equiv="Content-type" content="text/html; charset=utf-8">
+    <title>Language Identifier</title>
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js" type="text/javascript"></script>
+    <script type="text/javascript" charset="utf-8">
+      $(document).ready(function() {{
+        $("#typerArea").keyup(displayType);
+      
+        function displayType(){{
+          var contents = $("#typerArea").val();
+          if (contents.length != 0) {{
+            $.post(
+              "/detect",
+              {{q:contents}},
+              function(data){{
+                $("#showType").html(data.responseData.language);
+              }},
+              "json"
+            );
+          }}
+          else {{
+            $("#showType").html("");
+          }}
+        }}
+        $("#manualSubmit").remove();
+        $("#showType").html("");
+      }});
+    </script>
+  </head>
+  <body>
+    <form method=post>
+      <table>
+        <tr>
+          <td>
+            <textarea name="q" id="typerArea" cols=40 rows=6></textarea></br>
+          </td>
+          <td>
+            <p id="showType">Unable to load jQuery, live update disabled.</p>
+            <input type=submit id="manualSubmit" value="submit">
+          </td>
+        </tr>
+      </table>
+    </form>
+
+  </body>
 </html>
 """
 def application(environ, start_response):
@@ -232,7 +269,7 @@ def application(environ, start_response):
         status = '200 OK' # HTTP Status
         headers = [('Content-type', 'text/html; charset=utf-8')] # HTTP Headers
         start_response(status, headers)
-        return [query_form]
+        return [query_form.format(**environ)]
     elif environ['REQUEST_METHOD'] == 'POST':
       input_string = environ['wsgi.input'].read(int(environ['CONTENT_LENGTH']))
       try:
@@ -323,7 +360,7 @@ if __name__ == "__main__":
       from fapws import base
       evwsgi.start(hostname,str(options.port))
       evwsgi.set_base_module(base)
-      evwsgi.wsgi_cb(("/", application))
+      evwsgi.wsgi_cb(('', application))
       evwsgi.set_debug(0)
       evwsgi.run()
     except ImportError:
