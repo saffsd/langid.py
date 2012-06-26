@@ -136,18 +136,17 @@ try:
     return __logfac[a]
   logfac = np.frompyfunc(logfac, 1, 1)
 
-  def nb_classify(fv):
+  def argmax(x):
+    return np.argmax(x)
+
+  def nb_classprobs(fv):
     # compute the log-factorial of each element of the vector
     logfv = logfac(fv).astype(float)
     # compute the probability of the document given each class
     pdc = np.dot(fv,nb_ptc) - logfv.sum()
     # compute the probability of the document in each class
     pd = pdc + nb_pc
-    # select the most likely class
-    cl = np.argmax(pd)
-    # turn the pd into a probability distribution
-    pd /= pd.sum()
-    return cl, pd[cl]
+    return pd
     
   logger.debug('using numpy implementation')
   __USE_NUMPY__ = True
@@ -169,16 +168,15 @@ except ImportError:
     nb_ptc, nb_pc, nb_classes, tk_nextmove, tk_output = model
     nb_numfeats = len(nb_ptc) / len(nb_pc)
 
-  def nb_classify(fv):
+  def nb_classprobs(fv):
     raise NotImplementedError, "don't have pure python implementation yet"
 
   logger.debug('using python native implementation')
   __USE_NUMPY__ = False
 
-
-def classify(instance):
+def instance2fv(instance):
   """
-  Classify an instance.
+  Map an instance into the feature space of the trained model.
   """
   if isinstance(instance, unicode):
     instance = instance.encode('utf8')
@@ -189,10 +187,26 @@ def classify(instance):
   else:
     fv = tokenize(instance,
         array.array('L', itertootls.repeat(0, nb_numfeats)))
+  return fv
 
-  cl, conf = nb_classify(fv)
+def classify(instance):
+  """
+  Classify an instance.
+  """
+  fv = instance2fv(instance)
+  probs = nb_classprobs(fv)
+  cl = argmax(probs)
+  conf = probs[cl] / sum(probs)
   pred = nb_classes[cl]
   return pred, conf
+
+def rank(instance):
+  """
+  Return a list of languages in order of likelihood.
+  """
+  fv = instance2fv(instance)
+  probs = nb_classprobs(fv)
+  return [(k,v) for (v,k) in sorted(zip(probs, nb_classes), reverse=True)]
 
 # Based on http://www.ubacoda.com/index.php?p=8
 query_form = """
@@ -209,36 +223,52 @@ query_form = """
           var contents = $("#typerArea").val();
           if (contents.length != 0) {{
             $.post(
-              "/detect",
+              "/rank",
               {{q:contents}},
               function(data){{
-                $("#showType").html(data.responseData.language);
+                for(i=0;i<5;i++) {{
+                  $("#lang"+i).html(data.responseData[i][0]);
+                  $("#conf"+i).html(data.responseData[i][1]);
+                }}
+                $("#rankTable").show();
               }},
               "json"
             );
           }}
           else {{
-            $("#showType").html("");
+            $("#rankTable").hide();
           }}
         }}
         $("#manualSubmit").remove();
-        $("#showType").html("");
+        $("#rankTable").hide();
       }});
     </script>
   </head>
   <body>
     <form method=post>
-      <table>
+      <center><table>
         <tr>
           <td>
             <textarea name="q" id="typerArea" cols=40 rows=6></textarea></br>
           </td>
+        </tr>
+        <tr>
           <td>
-            <p id="showType">Unable to load jQuery, live update disabled.</p>
+            <table id="rankTable">
+              <tr>
+                <td id="lang0">
+                  <p>Unable to load jQuery, live update disabled.</p>
+                </td><td id="conf0"/>
+              </tr>
+              <tr><td id="lang1"/><td id="conf1"></tr>
+              <tr><td id="lang2"/><td id="conf2"></tr>
+              <tr><td id="lang3"/><td id="conf3"></tr>
+              <tr><td id="lang4"/><td id="conf4"></tr>
+            </table>
             <input type=submit id="manualSubmit" value="submit">
           </td>
         </tr>
-      </table>
+      </table></center>
     </form>
 
   </body>
@@ -254,7 +284,7 @@ def application(environ, start_response):
     # Catch shift_path_info's failure to handle empty paths properly
     path = ''
 
-  if path == 'detect':
+  if path == 'detect' or path == 'rank':
     data = None
 
     # Extract the data component from different access methods
@@ -287,14 +317,18 @@ def application(environ, start_response):
       }
 
     if data is not None:
-      pred,conf = classify(data)
+      if path == 'detect':
+        pred,conf = classify(data)
+        responseData = {'language':pred, 'confidence':conf}
+      elif path == 'rank':
+        responseData = rank(data)
+
       status = '200 OK' # HTTP Status
       response = {
-        'responseData': {'language':pred, 'confidence':conf}, 
+        'responseData': responseData,
         'responseStatus': 200, 
         'responseDetails': None,
       }
-
   else:
     # Incorrect URL
     status = '404 Not Found'
