@@ -347,6 +347,7 @@ if __name__ == "__main__":
   parser.add_option('-m', dest='model', help='load model from file')
   parser.add_option('-l', '--langs', dest='langs', help='comma-separated set of target ISO639 language codes (e.g en,de)')
   parser.add_option('-r', '--remote',action="store_true", default=False, help='auto-detect IP address for remote access')
+  parser.add_option('-b', '--browser',action="store_true", default=False, help='launch a webbrowser interface')
   options, args = parser.parse_args()
 
   if options.verbosity:
@@ -387,6 +388,9 @@ if __name__ == "__main__":
     else:
       hostname = options.host
 
+    if options.browser:
+      import webbrowser
+      webbrowser.open('http://{0}:{1}/detect'.format(hostname, options.port))
     try:
       if FORCE_WSGIREF: raise ImportError
       # Use fapws3 if available
