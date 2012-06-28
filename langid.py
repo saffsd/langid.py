@@ -37,6 +37,10 @@ HOST = None #leave as none for auto-detect
 PORT = 9008
 FORCE_NATIVE = False
 FORCE_WSGIREF = False
+NORM_PROBS = True # Normalize optput probabilities.
+
+# NORM_PROBS can be set to False for a small speed increase. It does not
+# affect the relative ordering of the predicted classes. 
 
 import itertools
 import array
@@ -147,6 +151,18 @@ try:
     # compute the probability of the document in each class
     pd = pdc + nb_pc
     return pd
+
+  if NORM_PROBS:
+    def norm_probs(pd):
+      """
+      Renormalize log-probs into a proper distribution (sum 1)
+      """
+      pd = np.exp(pd)
+      pd = pd / np.sum(pd)
+      return pd
+  else:
+    def norm_probs(pd):
+      return pd
     
   logger.debug('using numpy implementation')
   __USE_NUMPY__ = True
@@ -194,7 +210,7 @@ def classify(instance):
   Classify an instance.
   """
   fv = instance2fv(instance)
-  probs = nb_classprobs(fv)
+  probs = norm_probs(nb_classprobs(fv))
   cl = argmax(probs)
   conf = probs[cl] / sum(probs)
   pred = nb_classes[cl]
@@ -205,7 +221,7 @@ def rank(instance):
   Return a list of languages in order of likelihood.
   """
   fv = instance2fv(instance)
-  probs = nb_classprobs(fv)
+  probs = norm_probs(nb_classprobs(fv))
   return [(k,v) for (v,k) in sorted(zip(probs, nb_classes), reverse=True)]
 
 # Based on http://www.ubacoda.com/index.php?p=8
