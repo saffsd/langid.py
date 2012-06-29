@@ -372,6 +372,7 @@ if __name__ == "__main__":
   parser.add_option('-l', '--langs', dest='langs', help='comma-separated set of target ISO639 language codes (e.g en,de)')
   parser.add_option('-r', '--remote',action="store_true", default=False, help='auto-detect IP address for remote access')
   parser.add_option('--demo',action="store_true", default=False, help='launch an in-browser demo application')
+  parser.add_option('-u', '--url', help='langid of URL')
   options, args = parser.parse_args()
 
   if options.verbosity:
@@ -396,8 +397,15 @@ if __name__ == "__main__":
     langs = options.langs.split(",")
     set_languages(langs)
 
-  if options.serve or options.demo:
-
+  if options.url:
+    import urllib2
+    import contextlib
+    with contextlib.closing(urllib2.urlopen(options.url)) as url:
+      text = url.read()
+      lang, conf = classify(text)
+      print options.url, len(text), lang
+    
+  elif options.serve or options.demo:
     # from http://stackoverflow.com/questions/166506/finding-local-ip-addresses-in-python
     if options.remote and options.host is None:
       # resolve the external ip address
