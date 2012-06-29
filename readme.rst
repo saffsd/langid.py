@@ -45,6 +45,7 @@ wsgiref.simple_server otherwise.
 Usage
 -----
 
+:
 Usage: langid.py [options]
 
 Options:
@@ -58,25 +59,26 @@ Options:
                         comma-separated set of target ISO639 language codes
                         (e.g en,de)
   -r, --remote          auto-detect IP address for remote access
-  -b, --browser         launch a webbrowser interface
+  --demo                launch an in-browser demo application
 
 
 The simplest way to use langid.py is as a command-line tool. Invoke using `python langid.py`.
 This will cause a prompt to display. Enter text to identify, and hit enter::
 
-  >>> This is a test 
-  ('en', -55.106250761034801)
+  >>> This is a test
+  ('en', 0.99999999099035441)
   >>> Questa e una prova
-  ('it', -35.417712211608887)
+  ('it', 0.98569847366134222)
 
 langid.py can also detect when the input is redirected (only tested under Linux), and in this
 case will process until EOF rather than until newline like in interactive mode::
 
   python langid.py < readme.rst 
-  ('en', -5347.4231110975252)
+  ('en', 1.0)
 
-The value returned is a score for the language. It is not a probability esimate, as it is not
-normalized by the document probability since this is unnecessary for classification.
+The value returned is the probability estimate for the language. Full estimation is
+not actually necessary for classification, and can be disabled in the source code
+of langid.py for a slight performance boost. 
 
 You can also use langid.py as a python library::
 
@@ -86,7 +88,7 @@ You can also use langid.py as a python library::
   Type "help", "copyright", "credits" or "license" for more information.
   >>> import langid
   >>> langid.classify("This is a test")
-  ('en', -55.106250761034801)
+  ('en', 0.99999999099035441)
   
 Finally, langid.py can use Python's built-in wsgiref.simple_server (or fapws3 if available) to
 provide language identification as a web service. To do this, launch `python langid.py -s`, and
@@ -95,12 +97,12 @@ with no data, a simple HTML forms interface is displayed.
 
 The response is generated in JSON, here is an example::
 
-  {"responseData": {"confidence": -55.106250761034801, "language": "en"}, "responseDetails": null, "responseStatus": 200}
+  {"responseData": {"confidence": 0.99999999099035441, "language": "en"}, "responseDetails": null, "responseStatus": 200}
 
 A utility such as curl can be used to access the web service::
 
   # curl -d "q=This is a test" localhost:9008/detect
-  {"responseData": {"confidence": -55.106250761034801, "language": "en"}, "responseDetails": null, "responseStatus": 200}
+  {"responseData": {"confidence": 0.99999999099035441, "language": "en"}, "responseDetails": null, "responseStatus": 200}
 
 You can also use HTTP PUT::
 
@@ -108,13 +110,13 @@ You can also use HTTP PUT::
     % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
                                  Dload  Upload   Total   Spent    Left  Speed
   100  2871  100   119  100  2752    117   2723  0:00:01  0:00:01 --:--:--  2727
-  {"responseData": {"confidence": -3728.4490563860536, "language": "en"}, "responseDetails": null, "responseStatus": 200}
+  {"responseData": {"confidence": 1.0, "language": "en"}, "responseDetails": null, "responseStatus": 200}
 
 If no "q=XXX" key-value pair is present in the HTTP POST payload, langid.py will interpret the entire
 file as a single query. This allows for redirection via curl::
 
   # echo "This is a test" | curl -d @- localhost:9008/detect
-  {"responseData": {"confidence": -55.106250761034801, "language": "en"}, "responseDetails": null, "responseStatus": 200}
+  {"responseData": {"confidence": 0.99999999099035441, "language": "en"}, "responseDetails": null, "responseStatus": 200}
 
 langid.py will attempt to discover the host IP address automatically. Often, this is set to localhost(127.0.1.1), even 
 though the machine has a different external IP address. langid.py can attempt to automatically discover the external
@@ -125,11 +127,11 @@ language codes::
 
   # python langid.py -l it,fr
   >>> Io non parlo italiano
-  ('it', -38.538481712341309)
+  ('it', 0.99999999988965627)
   >>> Je ne parle pas français
-  ('fr', -116.95343780517578)
+  ('fr', 1.0)
   >>> I don't speak english
-  ('it', -8.8632845878601074)
+  ('it', 0.92210605672341062)
 
 When using langid.py as a library, the set_languages method can be used to constrain the language set::
 
@@ -139,18 +141,20 @@ When using langid.py as a library, the set_languages method can be used to const
   Type "help", "copyright", "credits" or "license" for more information.
   >>> import langid
   >>> langid.classify("I do not speak english")
-  ('en', -48.104645729064941)
+  ('en', 0.57133487679900674)
   >>> langid.set_languages(['de','fr','it'])
   >>> langid.classify("I do not speak english")
-  ('it', -52.895359516143799)
+  ('it', 0.99999835791478453)
   >>> langid.set_languages(['en','it'])
   >>> langid.classify("I do not speak english")
-  ('en', -48.104645729064941)
+  ('en', 0.99176190378750373)
 
 Training a model
 ----------------
-Training a model for langid.py is a non-trivial process, due to the large amount of computations required
-for the feature selection stage. Nonetheless, a parallelized model generator is provided with langid.py. 
+Training a model for langid.py requires a large amount of computation for the feature selection stage.
+We provide a parallelized model generator that can run on a modern desktop machine. It uses a sharding
+technique similar to map-reduce to allow paralellization while running in constant memory.
+
 The model training is broken into two steps:
 
 1. LD Feature Selection (LDfeatureselect.py)

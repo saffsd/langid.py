@@ -156,9 +156,10 @@ try:
     def norm_probs(pd):
       """
       Renormalize log-probs into a proper distribution (sum 1)
+      The technique for dealing with underflow is described in
+      http://jblevins.org/log/log-sum-exp
       """
-      pd = np.exp(pd)
-      pd = pd / np.sum(pd)
+      pd = (1/np.exp(pd[None,:] - pd[:,None]).sum(1))
       return pd
   else:
     def norm_probs(pd):
@@ -212,7 +213,7 @@ def classify(instance):
   fv = instance2fv(instance)
   probs = norm_probs(nb_classprobs(fv))
   cl = argmax(probs)
-  conf = probs[cl] / sum(probs)
+  conf = probs[cl]
   pred = nb_classes[cl]
   return pred, conf
 
@@ -310,12 +311,13 @@ def application(environ, start_response):
       try:
         data = parse_qs(environ['QUERY_STRING'])['q'][0]
       except KeyError:
-        # No query, so we display a query interface instead
-        # TODO: Detect if this is coming from a browser!
+        # No query, provide a null response.
         status = '200 OK' # HTTP Status
-        headers = [('Content-type', 'text/html; charset=utf-8')] # HTTP Headers
-        start_response(status, headers)
-        return [query_form.format(**environ)]
+        response = {
+          'responseData': None,
+          'responseStatus': 200, 
+          'responseDetails': None,
+        }
     elif environ['REQUEST_METHOD'] == 'POST':
       input_string = environ['wsgi.input'].read(int(environ['CONTENT_LENGTH']))
       try:
@@ -345,6 +347,12 @@ def application(environ, start_response):
         'responseStatus': 200, 
         'responseDetails': None,
       }
+  elif path == 'demo':
+    status = '200 OK' # HTTP Status
+    headers = [('Content-type', 'text/html; charset=utf-8')] # HTTP Headers
+    start_response(status, headers)
+    return [query_form.format(**environ)]
+    
   else:
     # Incorrect URL
     status = '404 Not Found'
@@ -363,7 +371,7 @@ if __name__ == "__main__":
   parser.add_option('-m', dest='model', help='load model from file')
   parser.add_option('-l', '--langs', dest='langs', help='comma-separated set of target ISO639 language codes (e.g en,de)')
   parser.add_option('-r', '--remote',action="store_true", default=False, help='auto-detect IP address for remote access')
-  parser.add_option('-b', '--browser',action="store_true", default=False, help='launch a webbrowser interface')
+  parser.add_option('--demo',action="store_true", default=False, help='launch an in-browser demo application')
   options, args = parser.parse_args()
 
   if options.verbosity:
@@ -388,7 +396,7 @@ if __name__ == "__main__":
     langs = options.langs.split(",")
     set_languages(langs)
 
-  if options.serve:
+  if options.serve or options.demo:
 
     # from http://stackoverflow.com/questions/166506/finding-local-ip-addresses-in-python
     if options.remote and options.host is None:
@@ -404,9 +412,9 @@ if __name__ == "__main__":
     else:
       hostname = options.host
 
-    if options.browser:
+    if options.demo:
       import webbrowser
-      webbrowser.open('http://{0}:{1}/detect'.format(hostname, options.port))
+      webbrowser.open('http://{0}:{1}/demo'.format(hostname, options.port))
     try:
       if FORCE_WSGIREF: raise ImportError
       # Use fapws3 if available
