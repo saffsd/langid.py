@@ -45,19 +45,20 @@ wsgiref.simple_server otherwise.
 Usage
 -----
 
-::
-  Usage: langid.py [options]
+Usage: langid.py [options]
 
-  Options:
-    -h, --help            show this help message and exit
-    -s, --serve           
-    --host=HOST           host/ip to bind to
-    --port=PORT           port to listen on
-    -v                    increase verbosity (repeat for greater effect)
-    -m MODEL              load model from file
-    -l LANGS, --langs=LANGS
-                          comma-separated set of target ISO639 language codes
-                          (e.g en,de)
+Options:
+  -h, --help            show this help message and exit
+  -s, --serve           launch web service
+  --host=HOST           host/ip to bind to
+  --port=PORT           port to listen on
+  -v                    increase verbosity (repeat for greater effect)
+  -m MODEL              load model from file
+  -l LANGS, --langs=LANGS
+                        comma-separated set of target ISO639 language codes
+                        (e.g en,de)
+  -r, --remote          auto-detect IP address for remote access
+  -b, --browser         launch a webbrowser interface
 
 
 The simplest way to use langid.py is as a command-line tool. Invoke using `python langid.py`.
@@ -185,3 +186,15 @@ as a command-line argument to langid.py::
 
     python langid.py -m model
 
+Read more
+---------
+langid.py is based on our published research. [1] describes the LD feature selection technique in detail,
+and [2] provides more detail about the module langid.py itself.
+
+[1] Lui, Marco and Timothy Baldwin (2011) Cross-domain Feature Selection for Language Identification, 
+In Proceedings of the Fifth International Joint Conference on Natural Language Processing (IJCNLP 2011), 
+Chiang Mai, Thailand, pp. 553—561. Available from http://www.aclweb.org/anthology/I11-1062
+
+[2] Lui, Marco and Timothy Baldwin (to appear) langid.py: An Off-the-shelf Language Identification Tool, 
+In Proceedings of the 50th Annual Meeting of the Association for Computational Linguistics (ACL 2012), 
+Demo Session, Jeju, Republic of Korea.

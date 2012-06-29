@@ -356,7 +356,7 @@ def application(environ, start_response):
 
 if __name__ == "__main__":
   parser = optparse.OptionParser()
-  parser.add_option('-s','--serve',action='store_true', default=False, dest='serve')
+  parser.add_option('-s','--serve',action='store_true', default=False, dest='serve', help='launch web service')
   parser.add_option('--host', default=HOST, dest='host', help='host/ip to bind to')
   parser.add_option('--port', default=PORT, dest='port', help='port to listen on')
   parser.add_option('-v', action='count', dest='verbosity', help='increase verbosity (repeat for greater effect)')
