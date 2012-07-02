@@ -371,13 +371,18 @@ if __name__ == "__main__":
   parser.add_option('-m', dest='model', help='load model from file')
   parser.add_option('-l', '--langs', dest='langs', help='comma-separated set of target ISO639 language codes (e.g en,de)')
   parser.add_option('-r', '--remote',action="store_true", default=False, help='auto-detect IP address for remote access')
+  parser.add_option('-b', '--batch', action="store_true", default=False, help='specify a list of files on the command line')
   parser.add_option('--demo',action="store_true", default=False, help='launch an in-browser demo application')
+  parser.add_option('-d', '--dist', action='store_true', default=False, help='show full distribution over languages')
   options, args = parser.parse_args()
 
   if options.verbosity:
     logging.basicConfig(level=max((5-options.verbosity)*10, 0))
   else:
     logging.basicConfig()
+
+  if options.batch and options.serve:
+    parser.error("cannot specify both batch and serve at the same time")
 
   # unpack a model 
   if options.model:
@@ -395,6 +400,17 @@ if __name__ == "__main__":
   if options.langs:
     langs = options.langs.split(",")
     set_languages(langs)
+
+  def _process(text):
+    """
+    Set up a local function to do output, configured according to our settings.
+    """
+    if options.dist:
+      payload = rank(text)
+    else:
+      payload = classify(text)
+
+    return payload
 
   if options.serve or options.demo:
 
@@ -433,6 +449,21 @@ if __name__ == "__main__":
         httpd.serve_forever()
       except KeyboardInterrupt:
         pass
+  elif options.batch:
+    # Start in batch mode - interpret input as paths rather than content
+    # to classify.
+    import sys, os, csv
+    writer = csv.writer(sys.stdout)
+    for line in sys.stdin:
+      path = line.strip()
+      if path:
+        if os.path.isfile(path):
+          with open(path) as f:
+            output = _process(f.read())
+          writer.writerow((path, output))
+        else:
+          # No such path
+          pass
   else:
     import sys
     if sys.stdin.isatty():
@@ -443,10 +474,10 @@ if __name__ == "__main__":
           text = raw_input()
         except Exception:
           break
-        print classify(text)
+        print _process(text)
     else:
       # Redirected
-      print classify(sys.stdin.read())
+      print _process(sys.stdin.read())
      
 else:
   # Running as an imported module; unpack the internal model
