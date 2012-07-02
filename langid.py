@@ -374,6 +374,7 @@ if __name__ == "__main__":
   parser.add_option('-b', '--batch', action="store_true", default=False, help='specify a list of files on the command line')
   parser.add_option('--demo',action="store_true", default=False, help='launch an in-browser demo application')
   parser.add_option('-d', '--dist', action='store_true', default=False, help='show full distribution over languages')
+  parser.add_option('-u', '--url', help='langid of URL')
   options, args = parser.parse_args()
 
   if options.verbosity:
@@ -412,8 +413,15 @@ if __name__ == "__main__":
 
     return payload
 
-  if options.serve or options.demo:
 
+  if options.url:
+    import urllib2
+    import contextlib
+    with contextlib.closing(urllib2.urlopen(options.url)) as url:
+      output = _process(url.read())
+      print options.url, len(text), output
+    
+  elif options.serve or options.demo:
     # from http://stackoverflow.com/questions/166506/finding-local-ip-addresses-in-python
     if options.remote and options.host is None:
       # resolve the external ip address

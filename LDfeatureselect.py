@@ -523,7 +523,7 @@ if __name__ == "__main__":
 
   # build a list of paths
   paths = []
-  for dirpath, dirnames, filenames in os.walk(options.corpus):
+  for dirpath, dirnames, filenames in os.walk(options.corpus, followlinks=True):
     for f in filenames:
       paths.append(os.path.join(dirpath, f))
   print "will tokenize %d files" % len(paths)
