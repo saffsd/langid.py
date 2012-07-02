@@ -355,7 +355,7 @@ def read_corpus(path):
   print "data directory: ", path
   langs = set()
   paths = []
-  for dirpath, dirnames, filenames in os.walk(path):
+  for dirpath, dirnames, filenames in os.walk(path, followlinks=True):
     for f in filenames:
       paths.append(os.path.join(dirpath, f))
       langs.add(os.path.basename(dirpath))
