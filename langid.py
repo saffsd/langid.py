@@ -217,6 +217,14 @@ def classify(instance):
   pred = nb_classes[cl]
   return pred, conf
 
+def cl_path(path):
+  """
+  Classify a file at a given path
+  """
+  with open(path) as f:
+    retval = classify(f.read())
+  return path, retval
+
 def rank(instance):
   """
   Return a list of languages in order of likelihood.
@@ -224,6 +232,14 @@ def rank(instance):
   fv = instance2fv(instance)
   probs = norm_probs(nb_classprobs(fv))
   return [(k,v) for (v,k) in sorted(zip(probs, nb_classes), reverse=True)]
+
+def rank_path(path):
+  """
+  Class ranking for a file at a given path
+  """
+  with open(path) as f:
+    retval = rank(f.read())
+  return path, retval
 
 # Based on http://www.ubacoda.com/index.php?p=8
 query_form = """
@@ -462,17 +478,29 @@ if __name__ == "__main__":
     # Start in batch mode - interpret input as paths rather than content
     # to classify.
     import sys, os, csv
+    import multiprocessing as mp
+
+    def generate_paths():
+      for line in sys.stdin:
+        path = line.strip()
+        if path:
+          if os.path.isfile(path):
+            yield path
+          else:
+            # No such path
+            pass
+
     writer = csv.writer(sys.stdout)
-    for line in sys.stdin:
-      path = line.strip()
-      if path:
-        if os.path.isfile(path):
-          with open(path) as f:
-            output = _process(f.read())
-          writer.writerow((path, output))
-        else:
-          # No such path
-          pass
+    pool = mp.Pool()
+    if options.dist:
+      writer.writerow(['path']+nb_classes)
+      for path, ranking in pool.imap_unordered(rank_path, generate_paths()):
+        ranking = dict(ranking)
+        row = [path] + [ranking[c] for c in nb_classes]
+        writer.writerow(row)
+    else:
+      for path, (lang,conf) in pool.imap_unordered(cl_path, generate_paths()):
+        writer.writerow((path, lang, conf))
   else:
     import sys
     if sys.stdin.isatty():
