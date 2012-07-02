@@ -418,7 +418,8 @@ if __name__ == "__main__":
     import urllib2
     import contextlib
     with contextlib.closing(urllib2.urlopen(options.url)) as url:
-      output = _process(url.read())
+      text = url.read()
+      output = _process(text)
       print options.url, len(text), output
     
   elif options.serve or options.demo:
