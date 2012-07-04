@@ -132,24 +132,13 @@ try:
     nb_ptc = nb_ptc[:,subset_mask]
     nb_pc = nb_pc[subset_mask]
 
-
-  __logfac = {}
-  def logfac(a):
-    if a not in __logfac:
-      __logfac[a] = np.sum(np.log(np.arange(1,a+1)))
-    return __logfac[a]
-  logfac = np.frompyfunc(logfac, 1, 1)
-
   def argmax(x):
     return np.argmax(x)
 
   def nb_classprobs(fv):
-    # compute the log-factorial of each element of the vector
-    #logfv = logfac(fv).astype(float)
-    # compute the probability of the document given each class
-    #pdc = np.dot(fv,nb_ptc) - logfv.sum()
+    # compute the partial log-probability of the document given each class
     pdc = np.dot(fv,nb_ptc)
-    # compute the probability of the document in each class
+    # compute the partial log-probability of the document in each class
     pd = pdc + nb_pc
     return pd
 
