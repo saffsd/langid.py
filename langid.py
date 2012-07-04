@@ -145,9 +145,10 @@ try:
 
   def nb_classprobs(fv):
     # compute the log-factorial of each element of the vector
-    logfv = logfac(fv).astype(float)
+    #logfv = logfac(fv).astype(float)
     # compute the probability of the document given each class
-    pdc = np.dot(fv,nb_ptc) - logfv.sum()
+    #pdc = np.dot(fv,nb_ptc) - logfv.sum()
+    pdc = np.dot(fv,nb_ptc)
     # compute the probability of the document in each class
     pd = pdc + nb_pc
     return pd
