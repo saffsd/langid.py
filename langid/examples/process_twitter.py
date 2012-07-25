@@ -14,7 +14,6 @@ Marco Lui, June 2012
 
 import sys
 import langid
-import itertools
 import json
 import optparse
 
