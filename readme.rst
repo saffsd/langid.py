@@ -202,3 +202,7 @@ Chiang Mai, Thailand, pp. 553—561. Available from http://www.aclweb.org/anthol
 [2] Lui, Marco and Timothy Baldwin (to appear) langid.py: An Off-the-shelf Language Identification Tool, 
 In Proceedings of the 50th Annual Meeting of the Association for Computational Linguistics (ACL 2012), 
 Demo Session, Jeju, Republic of Korea.
+
+Acknowledgements
+----------------
+Thanks to aitzol for help with packaging langid.py for PyPI.
