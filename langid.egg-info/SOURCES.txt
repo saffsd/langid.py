@@ -1,4 +1,4 @@
-readme.rst
+README
 setup.cfg
 setup.py
 langid/LDfeatureselect.py
