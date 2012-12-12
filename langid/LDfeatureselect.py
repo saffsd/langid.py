@@ -369,6 +369,8 @@ def select_LD_features(features, lang_index, b_dirs, chunk_offsets, cm_domain, c
     w_domain.append(w_d)
     terms.extend(t)
     print "processed chunk (%d/%d) [%d terms]" % (i+1, num_chunk, len(t))
+  pool.join()
+
   w_lang = numpy.hstack(w_lang)
   w_domain = numpy.concatenate(w_domain)
   terms = ["".join(t) for t in terms]
@@ -418,6 +420,7 @@ def build_inverted_index(paths, options):
   for i, keycount in enumerate(pass1_out):
     print "tokenized chunk (%d/%d) [%d keys]" % (i+1,total, keycount)
     wrotekeys += keycount
+  pool.join()
 
   print "wrote a total of %d keys" % wrotekeys 
 
@@ -429,6 +432,7 @@ def build_inverted_index(paths, options):
   for i, keycount in enumerate(pass2_out):
     readkeys += keycount 
     print "processed bucket (%d/%d) [%d keys]" % (i+1, options.buckets, keycount)
+  pool.join()
 
   print "read back a total of %d keys (%d short)" % ( readkeys, wrotekeys-readkeys)
 
