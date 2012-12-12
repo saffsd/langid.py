@@ -40,6 +40,7 @@ import numpy as np
 import multiprocessing as mp
 import tempfile
 import marshal
+import atexit, shutil
 from collections import deque, defaultdict
 from contextlib import closing
 
@@ -171,16 +172,17 @@ def offsets(chunks):
     chunk_offsets.append(chunk_offsets[-1] + len(c))
   return chunk_offsets
 
-def unmarshal_iter(f):
+
+def unmarshal_iter(path):
   """
-  Iterator over a file object, which unmarshals
-  item by item.
+  Open a given path and yield an iterator over items unmarshalled from it.
   """
-  while True:
-    try:
-      yield marshal.load(f)
-    except EOFError:
-      break
+  with open(path, 'rb') as f:
+    while True:
+      try:
+        yield marshal.load(f)
+      except EOFError:
+        break
 
 def index(seq):
   """
@@ -192,17 +194,16 @@ def index(seq):
   return dict((k,v) for (v,k) in enumerate(seq))
 
 
-def setup_pass1(nm_arr, output_states, state2feat, buckets, bucket_map, locks):
+def setup_pass1(nm_arr, output_states, state2feat, b_dirs, bucket_map):
   """
   Set the global next-move array used by the aho-corasick scanner
   """
-  global __nm_arr, __output_states, __state2feat, __buckets, __bucket_map, __locks
+  global __nm_arr, __output_states, __state2feat, __b_dirs, __bucket_map
   __nm_arr = nm_arr
   __output_states = output_states
   __state2feat = state2feat
-  __buckets = buckets
+  __b_dirs = b_dirs
   __bucket_map = bucket_map
-  __locks = locks
 
 
 def state_trace(path):
@@ -224,9 +225,11 @@ def pass1(arg):
   Tokenize documents and do counts for each feature
   Split this into buckets chunked over features rather than documents
   """
-  global __output_states, __state2feat, __buckets, __bucket_map, __locks
+  global __output_states, __state2feat, __b_dirs, __bucket_map
   chunk_id, chunk_paths = arg
   term_freq = defaultdict(int)
+  __procname = mp.current_process().name
+  __buckets = [tempfile.mkstemp(prefix=__procname, suffix='.index', dir=p)[0] for p in __b_dirs]
 
   for doc_id, path in enumerate(chunk_paths):
     count = state_trace(path)
@@ -238,8 +241,10 @@ def pass1(arg):
     bucket_index = __bucket_map[f_id]
     count = term_freq[doc_id, f_id]
     item = ( f_id, chunk_id, doc_id, count )
-    with __locks[bucket_index]:
-      os.write(__buckets[bucket_index], marshal.dumps(item))
+    os.write(__buckets[bucket_index], marshal.dumps(item))
+
+  for f in __buckets:
+    os.close(f)
 
   return len(term_freq)
 
@@ -254,16 +259,17 @@ def pass2(arg):
   Take a bucket, form a feature map, learn the nb_ptc for it.
   """
   global __cm, __chunk_offsets, __num_instances
-  num_feats, base_f_id, bucket = arg
+  num_feats, base_f_id, b_dir = arg
   fm = np.zeros((__num_instances, num_feats), dtype='int')
 
   read_count = 0
-  with os.fdopen(bucket) as fileh:
-    for f_id, chunk_id, doc_id, count in unmarshal_iter(fileh):
-      doc_index = __chunk_offsets[chunk_id] + doc_id
-      f_index = f_id - base_f_id
-      fm[doc_index, f_index] = count
-      read_count += 1
+  for path in os.listdir(b_dir):
+    if path.endswith('.index'):
+      for f_id, chunk_id, doc_id, count in unmarshal_iter(os.path.join(b_dir, path)):
+        doc_index = __chunk_offsets[chunk_id] + doc_id
+        f_index = f_id - base_f_id
+        fm[doc_index, f_index] = count
+        read_count += 1
 
   prod = np.dot(fm.T, __cm)
   return read_count, prod
@@ -293,8 +299,19 @@ def generate_cm(paths, langs):
 
   return nb_classes, cm
 
+@atexit.register
+def cleanup():
+  global b_dirs
+  try:
+    for d in b_dirs:
+      shutil.rmtree(d)
+  except NameError:
+    # Failed before b_dirs is defined, nothing to clean
+    pass
+
 FEATS_PER_CHUNK = 100
 def generate_ptc(paths, nb_features, tk_nextmove, state2feat, cm):
+  global b_dirs
   num_instances = len(paths)
   num_features = len(nb_features)
 
@@ -307,42 +324,35 @@ def generate_ptc(paths, nb_features, tk_nextmove, state2feat, cm):
 
   feat_index = index(nb_features)
 
-  buckets = []
-  locks = []
-  b_paths = []
   bucket_map = {}
+  b_dirs = []
   for chunk_id, feat_chunk in enumerate(feat_chunks):
     for feat in feat_chunk:
       bucket_map[feat_index[feat]] = chunk_id
 
-    handle, path = tempfile.mkstemp(prefix="bucket-")
-    buckets.append(handle)
-    b_paths.append(path)
-    locks.append(mp.Lock())
+    b_dirs.append(tempfile.mkdtemp(prefix="train-",suffix="-bucket"))
 
 
   output_states = set(state2feat)
-  with closing( mp.Pool(options.job_count, setup_pass1, (nm_arr, output_states, state2feat, buckets, bucket_map, locks)) 
+  with closing( mp.Pool(options.job_count, setup_pass1, (nm_arr, output_states, state2feat, b_dirs, bucket_map)) 
               ) as pool:
     pass1_out = pool.imap_unordered(pass1, enumerate(path_chunks))
+  pool.join()
 
-  print "wrote a total of %d keys" % sum(pass1_out)
-
-  for bucket in buckets:
-    os.lseek(bucket, 0, os.SEEK_SET)
+  write_count = sum(pass1_out)
+  print "wrote a total of %d keys" % write_count
 
   f_chunk_sizes = map(len, feat_chunks)
   f_chunk_offsets = offsets(feat_chunks)
   with closing( mp.Pool(options.job_count, setup_pass2, (cm, offsets(path_chunks), num_instances)) 
               ) as pool:
-    pass2_out = pool.imap(pass2, zip(f_chunk_sizes, f_chunk_offsets, buckets))
+    pass2_out = pool.imap(pass2, zip(f_chunk_sizes, f_chunk_offsets, b_dirs))
+  pool.join()
 
   reads, pass2_out = zip(*pass2_out)
+  read_count = sum(reads)
 
-  for path in b_paths:
-    os.remove(path)
-
-  print "read a total of %d keys" % sum(reads)
+  print "read a total of %d keys (%d short)" % (read_count, write_count - read_count)
   prod = np.vstack(pass2_out)
   ptc = np.log(1 + prod) - np.log(num_features + prod.sum(0))
 
