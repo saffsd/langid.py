@@ -400,7 +400,7 @@ def get_classmaps(paths):
 
 def build_inverted_index(paths, options):
   global b_dirs
-  b_dirs = [ tempfile.mkdtemp(prefix="bucket-") for i in range(options.buckets) ]
+  b_dirs = [ tempfile.mkdtemp(prefix="LDfeatureselect-",suffix='-bucket') for i in range(options.buckets) ]
 
   chunk_size = min(len(paths) / (options.job_count*2), 100)
   path_chunks = list(chunk(paths, chunk_size))
