@@ -35,7 +35,6 @@ or implied, of the copyright holder.
 # Defaults for inbuilt server
 HOST = None #leave as none for auto-detect
 PORT = 9008
-FORCE_NATIVE = False
 FORCE_WSGIREF = False
 NORM_PROBS = True # Normalize optput probabilities.
 
@@ -146,7 +145,7 @@ class LanguageIdentifier(object):
   """
 
   @classmethod
-  def from_modelstring(cls, string):
+  def from_modelstring(cls, string, *args, **kwargs):
     model = loads(bz2.decompress(base64.b64decode(string)))
     nb_ptc, nb_pc, nb_classes, tk_nextmove, tk_output = model
     nb_numfeats = len(nb_ptc) / len(nb_pc)
@@ -155,15 +154,15 @@ class LanguageIdentifier(object):
     nb_pc = np.array(nb_pc)
     nb_ptc = np.array(nb_ptc).reshape(len(nb_ptc)/len(nb_pc), len(nb_pc))
    
-    return cls(nb_ptc, nb_pc, nb_numfeats, nb_classes, tk_nextmove, tk_output)
+    return cls(nb_ptc, nb_pc, nb_numfeats, nb_classes, tk_nextmove, tk_output, *args, **kwargs)
 
   @classmethod
-  def from_modelpath(cls, path):
+  def from_modelpath(cls, path, *args, **kwargs):
     with open(path) as f:
-      return cls.from_modelstring(f.read())
+      return cls.from_modelstring(f.read(), *args, **kwargs)
 
   def __init__(self, nb_ptc, nb_pc, nb_numfeats, nb_classes, tk_nextmove, tk_output,
-               norm_probs = True):
+               norm_probs = NORM_PROBS):
     self.nb_ptc = nb_ptc
     self.nb_pc = nb_pc
     self.nb_numfeats = nb_numfeats
@@ -428,6 +427,7 @@ if __name__ == "__main__":
   parser.add_option('--demo',action="store_true", default=False, help='launch an in-browser demo application')
   parser.add_option('-d', '--dist', action='store_true', default=False, help='show full distribution over languages')
   parser.add_option('-u', '--url', help='langid of URL')
+  parser.add_option('-n', '--normalize', action='store_true', default=False, help='normalize confidence scores to probability values')
   options, args = parser.parse_args()
 
   if options.verbosity:
@@ -441,13 +441,13 @@ if __name__ == "__main__":
   # unpack a model 
   if options.model:
     try:
-      identifier = LanguageIdentifier.from_modelpath(options.model)
+      identifier = LanguageIdentifier.from_modelpath(options.model, norm_probs = options.normalize)
       logger.info("Using external model: %s", options.model)
     except IOError, e:
       logger.warning("Failed to load %s: %s" % (options.model,e))
   
   if identifier is None:
-    identifier = LanguageIdentifier.from_modelstring(model)
+    identifier = LanguageIdentifier.from_modelstring(model, norm_probs = options.normalize)
     logger.info("Using internal model")
 
   if options.langs:
