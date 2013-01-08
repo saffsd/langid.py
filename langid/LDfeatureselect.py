@@ -51,6 +51,7 @@ import marshal
 import numpy
 import cPickle
 import multiprocessing as mp
+import atexit
 from itertools import tee, imap
 from collections import defaultdict
 from datetime import datetime
@@ -136,16 +137,16 @@ def chunk(seq, chunksize):
       break
     yield chunk
 
-def unmarshal_iter(f):
+def unmarshal_iter(path):
   """
-  Iterator over a file object, which unmarshals
-  item by item.
+  Open a given path and yield an iterator over items unmarshalled from it.
   """
-  while True:
-    try:
-      yield marshal.load(f)
-    except EOFError:
-      break
+  with open(path, 'rb') as f:
+    while True:
+      try:
+        yield marshal.load(f)
+      except EOFError:
+        break
 
 def split_info(f_masks, class_map):
   num_inst = f_masks.shape[1]
@@ -177,12 +178,20 @@ def infogain(nonzero, class_map):
   feature_weights = H_P - split_info(x, class_map)
   return feature_weights
 
-def setup_pass1(maxorder, b_freq, b_list, locks):
-  global __maxorder, __b_freq, __b_list, __locks
+@atexit.register
+def cleanup():
+  global b_dirs
+  try:
+    for d in b_dirs:
+      shutil.rmtree(d)
+  except NameError:
+    # Failed before b_dirs is defined, nothing to clean
+    pass
+
+def setup_pass1(maxorder, b_dirs):
+  global __maxorder, __b_dirs
   __maxorder = maxorder 
-  __locks = locks
-  __b_freq = b_freq
-  __b_list = b_list
+  __b_dirs = b_dirs
 
 
 def pass1(arg):
@@ -195,7 +204,10 @@ def pass1(arg):
   now we are chunked on the term axis rather
   than the document axis.
   """
-  global __maxorder, __b_freq, __b_list, __locks
+  global __maxorder, __b_dirs
+  __procname = mp.current_process().name
+  __b_freq = [tempfile.mkstemp(prefix=__procname, suffix='.freq', dir=p)[0] for p in __b_dirs]
+  __b_list = [tempfile.mkstemp(prefix=__procname, suffix='.list', dir=p)[0] for p in __b_dirs]
   chunk_id, chunk_paths = arg
   
   extractor = Tokenizer(__maxorder)
@@ -210,35 +222,31 @@ def pass1(arg):
         term_doc_list[token].append(doc_index)
 
   for key in term_doc_freq:
-    bucket_index = hash(key) % len(__locks)
-    with __locks[bucket_index]:
-      os.write(__b_freq[bucket_index], marshal.dumps((key, term_doc_freq[key])))
-      os.write(__b_list[bucket_index], marshal.dumps((key, chunk_id, term_doc_list[key])))
+    bucket_index = hash(key) % len(__b_freq)
+    os.write(__b_freq[bucket_index], marshal.dumps((key, term_doc_freq[key])))
+    os.write(__b_list[bucket_index], marshal.dumps((key, chunk_id, term_doc_list[key])))
+
+  # Close all the open files
+  for f in __b_freq + __b_list:
+    os.close(f)
 
   return len(term_doc_freq)
-
-def setup_pass2(maxorder, doc_freq_fd, lock):
-  global __maxorder, __doc_freq, __doc_freq_lock
-  __maxorder = maxorder
-  __doc_freq = doc_freq_fd
-  __doc_freq_lock = lock
 
 def pass2(bucket):
   """
   Take a term->df count bucket and sum it up
   """
-  global __maxorder, __doc_freq
-  fileh = os.fdopen(bucket)
   doc_count = defaultdict(int)
   count = 0
-
-  for key, value in unmarshal_iter(fileh):
-    doc_count[key] += value
-    count += 1
+  with open(os.path.join(bucket, "docfreq"),'wb') as docfreq:
+    for path in os.listdir(bucket):
+      if path.endswith('.freq'):
+        for key, value in unmarshal_iter(os.path.join(bucket,path)):
+          doc_count[key] += value
+          count += 1
     
-  with __doc_freq_lock:
     for item in doc_count.iteritems():
-      os.write(__doc_freq, marshal.dumps(item))
+      docfreq.write(marshal.dumps(item))
   return count
 
 def setup_pass3(features, chunk_offsets, cm_domain, cm_lang):
@@ -248,10 +256,10 @@ def setup_pass3(features, chunk_offsets, cm_domain, cm_lang):
   __cm_domain = cm_domain
   __cm_lang = cm_lang
 
-def pass3(chunk_path):
+def pass3(bucket):
   """
   In this pass we actually compute information gain.
-  For each chunk, we need to load up the corresponding feature map.
+  For each bucket, we need to load up the corresponding feature map.
   This includes the filtering of top-DF features as identified in
   the previous pass.
   Then we compute information gain with respect to the domain
@@ -261,12 +269,13 @@ def pass3(chunk_path):
    
   # Select only our listed features
   term_doc_map = defaultdict(list)
-  with open(chunk_path) as f:
-    for key, chunk_id, docids in unmarshal_iter(f):
-      if key in __features:
-        offset = __chunk_offsets[chunk_id]
-        for docid in docids:
-          term_doc_map[key].append(docid+offset)
+  for path in os.listdir(bucket):
+    if path.endswith('.list'):
+      for key, chunk_id, docids in unmarshal_iter(os.path.join(bucket,path)):
+        if key in __features:
+          offset = __chunk_offsets[chunk_id]
+          for docid in docids:
+            term_doc_map[key].append(docid+offset)
   num_inst = __chunk_offsets[-1]
   num_feat = len(term_doc_map)
 
@@ -282,7 +291,7 @@ def pass3(chunk_path):
   w_lang = []
   w_domain = infogain(feature_map, __cm_domain)
   for langid in range(__cm_lang.shape[1]):
-    pos = cm_lang[:, langid]
+    pos = __cm_lang[:, langid]
     neg = numpy.logical_not(pos)
     cm = numpy.hstack((neg[:,None], pos[:,None]))
     w = infogain(feature_map, cm)
@@ -334,7 +343,7 @@ class ClassIndexer(object):
       cm_lang[docid, self.lang_index[lang]] = True
     return cm_domain, cm_lang
 
-def select_LD_features(features, lang_index, chunk_paths, chunk_offsets, cm_domain, cm_lang, options):
+def select_LD_features(features, lang_index, b_dirs, chunk_offsets, cm_domain, cm_lang, options):
   print "computing information gain"
   # Instead of receiving a single feature map, we now receive a list of paths,
   # each corresponding to a chunk containing a portion of the final feature set
@@ -349,9 +358,9 @@ def select_LD_features(features, lang_index, chunk_paths, chunk_offsets, cm_doma
   with closing( mp.Pool(options.job_count, setup_pass3, 
                 (features, chunk_offsets, cm_domain, cm_lang))
               ) as pool:
-    pass3_out = pool.imap_unordered(pass3, chunk_paths, chunksize=1)
+    pass3_out = pool.imap_unordered(pass3, b_dirs, chunksize=1)
 
-  num_chunk = len(chunk_paths)
+  num_chunk = len(b_dirs)
   w_lang = []
   w_domain = []
   terms = []
@@ -359,7 +368,9 @@ def select_LD_features(features, lang_index, chunk_paths, chunk_offsets, cm_doma
     w_lang.append(w_l)
     w_domain.append(w_d)
     terms.extend(t)
-    print "processed chunk (%d/%d)" % (i+1, num_chunk)
+    print "processed chunk (%d/%d) [%d terms]" % (i+1, num_chunk, len(t))
+  pool.join()
+
   w_lang = numpy.hstack(w_lang)
   w_domain = numpy.concatenate(w_domain)
   terms = ["".join(t) for t in terms]
@@ -390,28 +401,14 @@ def get_classmaps(paths):
   return cm_domain, cm_lang, indexer.lang_index 
 
 def build_inverted_index(paths, options):
-  b_f = []
-  b_l = []
-  b_f_paths = []
-  b_l_paths = []
-  b_locks = []
-
-  for i in range(options.buckets):
-    handle, path = tempfile.mkstemp(prefix="bucket_freq-")
-    b_f.append(handle)
-    b_f_paths.append(path)
-
-    handle, path = tempfile.mkstemp(prefix="bucket_list-")
-    b_l.append(handle)
-    b_l_paths.append(path)
-
-    b_locks.append(mp.Lock())
+  global b_dirs
+  b_dirs = [ tempfile.mkdtemp(prefix="LDfeatureselect-",suffix='-bucket') for i in range(options.buckets) ]
 
   chunk_size = min(len(paths) / (options.job_count*2), 100)
   path_chunks = list(chunk(paths, chunk_size))
   # PASS 1: Tokenize documents into sets of terms
   with closing( mp.Pool(options.job_count, setup_pass1, 
-                (options.max_order, b_f, b_l, b_locks))
+                (options.max_order, b_dirs))
               ) as pool:
     pass1_out = pool.imap_unordered(pass1, enumerate(path_chunks), chunksize=1)
 
@@ -421,46 +418,31 @@ def build_inverted_index(paths, options):
 
   wrotekeys = 0
   for i, keycount in enumerate(pass1_out):
-    print "tokenized chunk (%d/%d)" % (i+1,total)
+    print "tokenized chunk (%d/%d) [%d keys]" % (i+1,total, keycount)
     wrotekeys += keycount
+  pool.join()
 
   print "wrote a total of %d keys" % wrotekeys 
 
-  # rewind all the file descriptors
-  for bucket in b_l + b_f:
-    os.lseek(bucket, 0, os.SEEK_SET)
-
-
   # PASS 2: Compile document frequency counts
-  doc_freq_fd, doc_count_path = tempfile.mkstemp(prefix="doccount-")
-  with closing( mp.Pool(options.job_count, setup_pass2, 
-                (options.max_order, doc_freq_fd, mp.Lock()))
-              ) as pool:
-    pass2_out = pool.imap_unordered(pass2, b_f, chunksize=1)
+  with closing( mp.Pool(options.job_count) ) as pool:
+    pass2_out = pool.imap_unordered(pass2, b_dirs, chunksize=1)
 
   readkeys = 0
   for i, keycount in enumerate(pass2_out):
     readkeys += keycount 
-    print "processed bucket (%d/%d)" % (i+1, NUM_BUCKETS)
+    print "processed bucket (%d/%d) [%d keys]" % (i+1, options.buckets, keycount)
+  pool.join()
 
   print "read back a total of %d keys (%d short)" % ( readkeys, wrotekeys-readkeys)
 
-  # close all file descriptors
-  for fd in b_l + b_f:
-    os.close(fd)
-
-  # delete the b_f files
-  for path in b_f_paths:
-    os.remove(path)
-
+  # build the global term->df mapping
   doc_count = {}
-  with os.fdopen(doc_freq_fd) as f:
-    f.seek(0)
-    for key, value in unmarshal_iter(f):
+  for bucket in b_dirs:
+    for key, value in unmarshal_iter(os.path.join(bucket, 'docfreq')):
       doc_count[key] = value
 
   print "unique features:", len(doc_count)
-  os.remove(doc_count_path)
 
   # Work out the set of features to compute IG
   features = set()
@@ -475,7 +457,7 @@ def build_inverted_index(paths, options):
   for c in path_chunks:
     chunk_offsets.append(chunk_offsets[-1] + len(c))
 
-  return b_l_paths, features, chunk_offsets
+  return b_dirs, features, chunk_offsets
 
 if __name__ == "__main__":
   parser = optparse.OptionParser()
@@ -530,19 +512,18 @@ if __name__ == "__main__":
 
   # Tokenize
   cm_domain, cm_lang, lang_index = get_classmaps(paths)
-  chunk_paths, features, chunk_offsets = build_inverted_index(paths, options)
+  b_dirs, features, chunk_offsets = build_inverted_index(paths, options)
 
   # Convert features from character tuples to strings
   #features = [ ''.join(f) for f in features ]
 
   # Compute LD from inverted index
   try:
-    final_feature_set = select_LD_features(features, lang_index, chunk_paths, chunk_offsets, cm_domain, cm_lang, options)
+    final_feature_set = select_LD_features(features, lang_index, b_dirs, chunk_offsets, cm_domain, cm_lang, options)
   except OSError, e:
     print e
     import pdb;pdb.pm()
  
-        
   # Output
   print "selected %d features" % len(final_feature_set)
 
