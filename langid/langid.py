@@ -41,16 +41,13 @@ NORM_PROBS = True # Normalize optput probabilities.
 # NORM_PROBS can be set to False for a small speed increase. It does not
 # affect the relative ordering of the predicted classes. 
 
-import itertools
-import array
 import base64
 import bz2
 import json
 import optparse
 import logging
 import numpy as np
-from math import log
-from cPickle import loads, dumps
+from cPickle import loads
 from wsgiref.simple_server import make_server
 from wsgiref.util import shift_path_info
 from urlparse import parse_qs
