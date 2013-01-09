@@ -253,7 +253,7 @@ class LanguageIdentifier(object):
     """
     Return a list of languages in order of likelihood.
     """
-    fv = self.instance2fv(instance)
+    fv = self.instance2fv(text)
     probs = self.norm_probs(self.nb_classprobs(fv))
     return [(k,v) for (v,k) in sorted(zip(probs, self.nb_classes), reverse=True)]
 
