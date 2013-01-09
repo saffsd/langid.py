@@ -213,7 +213,7 @@ class LanguageIdentifier(object):
     Map an instance into the feature space of the trained model.
     """
     if isinstance(text, unicode):
-      instance = instance.encode('utf8')
+      instance = text.encode('utf8')
 
     arr = np.zeros((self.nb_numfeats,), dtype='uint32')
 
