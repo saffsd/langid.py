@@ -381,6 +381,7 @@ if __name__ == "__main__":
   parser.add_option('--demo',action="store_true", default=False, help='launch an in-browser demo application')
   parser.add_option('-d', '--dist', action='store_true', default=False, help='show full distribution over languages')
   parser.add_option('-u', '--url', help='langid of URL')
+  parser.add_option('--line', action="store_true", default=False, help='process pipes line-by-line rather than as a document')
   options, args = parser.parse_args()
 
   if options.verbosity:
@@ -504,7 +505,11 @@ if __name__ == "__main__":
         print _process(text)
     else:
       # Redirected
-      print _process(sys.stdin.read())
+      if options.line:
+        for line in sys.stdin.readlines():
+          print _process(line)
+      else:
+        print _process(sys.stdin.read())
      
 else:
   # Running as an imported module; unpack the internal model
