@@ -210,3 +210,11 @@ Marco Lui <saffsd@gmail.com> http://www.csse.unimelb.edu.au/~mlui
 Acknowledgements
 ----------------
 Thanks to aitzol for help with packaging langid.py for PyPI.
+
+Changelog
+---------
+v1.0: 
+  * Initial release
+
+v1.1:
+  * Reorganized internals to implement a LanguageIdentifier class
