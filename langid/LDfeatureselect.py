@@ -493,6 +493,8 @@ if __name__ == "__main__":
     output_path = 'a.LDfeatures'
 
   # set tempdir
+  if not os.path.exists(options.temp) and os.path.isdir(options.temp):
+    parser.error("tempdir %s does not exist" % options.temp)
   tempfile.tempdir = options.temp
 
   # display paths
