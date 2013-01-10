@@ -41,16 +41,13 @@ NORM_PROBS = True # Normalize optput probabilities.
 # NORM_PROBS can be set to False for a small speed increase. It does not
 # affect the relative ordering of the predicted classes. 
 
-import itertools
-import array
 import base64
 import bz2
 import json
 import optparse
 import logging
 import numpy as np
-from math import log
-from cPickle import loads, dumps
+from cPickle import loads
 from wsgiref.simple_server import make_server
 from wsgiref.util import shift_path_info
 from urlparse import parse_qs
@@ -213,7 +210,7 @@ class LanguageIdentifier(object):
     Map an instance into the feature space of the trained model.
     """
     if isinstance(text, unicode):
-      instance = instance.encode('utf8')
+      instance = text.encode('utf8')
 
     arr = np.zeros((self.nb_numfeats,), dtype='uint32')
 
@@ -256,7 +253,7 @@ class LanguageIdentifier(object):
     """
     Return a list of languages in order of likelihood.
     """
-    fv = self.instance2fv(instance)
+    fv = self.instance2fv(text)
     probs = self.norm_probs(self.nb_classprobs(fv))
     return [(k,v) for (v,k) in sorted(zip(probs, self.nb_classes), reverse=True)]
 
