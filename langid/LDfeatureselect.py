@@ -41,6 +41,7 @@ MAX_NGRAM_ORDER = 4 # largest order of n-grams to consider
 TOP_DOC_FREQ = 15000 # number of tokens to consider for each order
 FEATURES_PER_LANG = 300 # number of features to select for each language
 NUM_BUCKETS = 64 # number of buckets to use in k-v pair generation
+TRAIN_PROP = 1.0 # proportion of training data available to use
 
 import os, sys, optparse
 import collections
@@ -48,6 +49,7 @@ import csv
 import shutil
 import tempfile
 import marshal
+import random
 import numpy
 import cPickle
 import multiprocessing as mp
@@ -466,6 +468,7 @@ if __name__ == "__main__":
   parser.add_option("-j","--jobs", dest="job_count", type="int", help="number of processes to use", default=mp.cpu_count()+4)
   parser.add_option("-w","--weights",dest="weights", help="output weights to DIR (optional)", metavar="DIR")
   parser.add_option("-t","--temp",dest="temp", help="store temporary files in DIR", metavar="DIR", default=tempfile.gettempdir())
+  parser.add_option("-p","--proportion", help="proportion of training data to use", type="float", default=TRAIN_PROP)
   parser.add_option("--max_order", dest="max_order", type="int", help="highest n-gram order to use", default=MAX_NGRAM_ORDER)
   parser.add_option("--feats_per_lang", dest="feats_per_lang", type="int", help="number of features to retain for each language", default=FEATURES_PER_LANG)
   parser.add_option("--df_tokens", dest="df_tokens", type="int", help="number of tokens to consider for each n-gram order", default=TOP_DOC_FREQ)
@@ -509,7 +512,9 @@ if __name__ == "__main__":
   paths = []
   for dirpath, dirnames, filenames in os.walk(options.corpus, followlinks=True):
     for f in filenames:
-      paths.append(os.path.join(dirpath, f))
+      if random.random() < options.proportion:
+        # Each file has 'options.proportion' chance of being selected.
+        paths.append(os.path.join(dirpath, f))
   print "will tokenize %d files" % len(paths)
 
   # Tokenize
