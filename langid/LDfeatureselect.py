@@ -135,7 +135,7 @@ def chunk(seq, chunksize):
   """
   seq_iter = iter(seq)
   while True:
-    chunk = tuple(islice(seq_iter, i))
+    chunk = tuple(islice(seq_iter, chunksize))
     if not chunk: break
     yield chunk
 
