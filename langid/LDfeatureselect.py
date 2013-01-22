@@ -468,13 +468,12 @@ def build_inverted_index(paths, options):
 
   doc_count = defaultdict(int)
   #print "CHUNK SIZE", chunk_size
-  # TODO: Is this calculation correct? It seems off-by-one for when len(paths) is small
-  total = len(paths)/chunk_size + (0 if len(paths)%chunk_size else 1)
-  print "chunk size: %d (%d chunks)" % (chunk_size, total)
+  chunk_count = len(path_chunks)
+  print "chunk size: %d (%d chunks)" % (chunk_size, chunk_count)
 
   wrotekeys = 0
   for i, keycount in enumerate(pass1_out):
-    print "tokenized chunk (%d/%d) [%d keys]" % (i+1,total, keycount)
+    print "tokenized chunk (%d/%d) [%d keys]" % (i+1,chunk_count, keycount)
     wrotekeys += keycount
   pool.join()
 
