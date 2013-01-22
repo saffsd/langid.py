@@ -55,7 +55,7 @@ import numpy
 import cPickle
 import multiprocessing as mp
 import atexit
-from itertools import tee, imap
+from itertools import tee, imap, islice
 from collections import defaultdict
 from datetime import datetime
 from contextlib import closing
@@ -135,9 +135,8 @@ def chunk(seq, chunksize):
   """
   seq_iter = iter(seq)
   while True:
-    chunk = tuple(seq_iter.next() for i in range(chunksize))
-    if len(chunk) == 0:
-      break
+    chunk = tuple(islice(seq_iter, i))
+    if not chunk: break
     yield chunk
 
 def unmarshal_iter(path):
