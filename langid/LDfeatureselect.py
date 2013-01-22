@@ -42,6 +42,7 @@ TOP_DOC_FREQ = 15000 # number of tokens to consider for each order
 FEATURES_PER_LANG = 300 # number of features to select for each language
 NUM_BUCKETS = 64 # number of buckets to use in k-v pair generation
 TRAIN_PROP = 1.0 # proportion of training data available to use
+MIN_DOMAIN = 1 # minimum number of domains a language must be present in to be included
 
 import os, sys, optparse
 import collections
@@ -312,38 +313,97 @@ def write_weights(path, weights):
     for k in sorted(w, key=w.get, reverse=True):
       writer.writerow((repr(k), w[k]))
 
-class ClassIndexer(object):
-  def __init__(self, paths):
+class CorpusIndexer(object):
+  """
+  Class to index the contents of a corpus
+  """
+  def __init__(self, root, min_domain=MIN_DOMAIN, proportion=TRAIN_PROP):
+    self.root = root
+    self.min_domain = min_domain
+    self.proportion = proportion 
+
     self.lang_index = defaultdict(Enumerator())
     self.domain_index = defaultdict(Enumerator())
-    self.doc_keys = []
-    self.index_paths(paths)
+    self.coverage_index = defaultdict(set)
+    self.items = list()
 
-  def index_paths(self, paths):
-    for path in paths:
-      # split the path into identifying components
-      path, docname = os.path.split(path)
-      path, lang = os.path.split(path)
-      path, domain = os.path.split(path)
+    self.index(root)
+    self.prune_min_domain(self.min_domain)
 
-      # obtain a unique key for the file
-      key = domain,lang,docname
-      self.doc_keys.append(key)
+  def index(self, root):
+    # build a list of paths
+    paths = []
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=True):
+      for docname in filenames:
+        if random.random() < self.proportion:
+          # Each file has 'proportion' chance of being selected.
+          path = os.path.join(dirpath, docname)
 
-      # index the language and the domain
-      lang_id = self.lang_index[lang]
-      domain_id = self.domain_index[domain]
+          # split the dirpath into identifying components
+          d, lang = os.path.split(dirpath)
+          d, domain = os.path.split(d)
 
-  def get_class_maps(self):
-    num_instances = len(self.doc_keys)
+          # index the language and the domain
+          lang_id = self.lang_index[lang]
+          domain_id = self.domain_index[domain]
+
+          # add the domain-lang relation to the coverage index
+          self.coverage_index[domain].add(lang)
+
+          # add the item to our list
+          self.items.append((domain_id,lang_id,docname,path))
+
+  def prune_min_domain(self, min_domain):
+    # prune files for all languages that do not occur in at least min_domain 
+     
+    # Work out which languages to reject as they are not present in at least 
+    # the required number of domains
+    lang_domain_count = defaultdict(int)
+    for langs in self.coverage_index.values():
+      for lang in langs:
+        lang_domain_count[lang] += 1
+    reject_langs = set( l for l in lang_domain_count if lang_domain_count[l] < min_domain)
+
+    # Remove the languages from the indexer
+    if reject_langs:
+      #print "reject (<{0} domains): {1}".format(min_domain, sorted(reject_langs))
+      reject_ids = set(self.lang_index[l] for l in reject_langs)
+    
+      new_lang_index = defaultdict(Enumerator())
+      lm = dict()
+      for k,v in self.lang_index.items():
+        if v not in reject_ids:
+          new_id = new_lang_index[k]
+          lm[v] = new_id
+
+      # Eliminate all entries for the languages
+      self.items = [ (d, lm[l], n, p) for (d, l, n, p) in self.items if l in lm]
+
+      self.lang_index = new_lang_index
+
+
+  @property 
+  def classmaps(self):
+    num_instances = len(self.items)
+    if num_instances == 0:
+      raise ValueError("no items indexed!")
     cm_domain = numpy.zeros((num_instances, len(self.domain_index)), dtype='bool')
     cm_lang = numpy.zeros((num_instances, len(self.lang_index)), dtype='bool')
 
     # Populate the class maps
-    for docid, (domain, lang, docname) in enumerate(self.doc_keys):
-      cm_domain[docid, self.domain_index[domain]] = True
-      cm_lang[docid, self.lang_index[lang]] = True
+    for docid, (domain_id, lang_id, docname, path) in enumerate(self.items):
+      cm_domain[docid, domain_id] = True
+      cm_lang[docid, lang_id] = True
     return cm_domain, cm_lang
+
+  @property
+  def paths(self):
+    return [ p for (d,l,n,p) in self.items ]
+
+
+
+    
+    
 
 def select_LD_features(features, lang_index, b_dirs, chunk_offsets, cm_domain, cm_lang, options):
   print "computing information gain"
@@ -395,18 +455,11 @@ def select_LD_features(features, lang_index, b_dirs, chunk_offsets, cm_domain, c
   return final_feature_set
     
 
-def get_classmaps(paths):
-  indexer = ClassIndexer(paths)
-  cm_domain, cm_lang = indexer.get_class_maps()
-  print "langs:", indexer.lang_index.keys()
-  print "domains:", indexer.domain_index.keys()
-  return cm_domain, cm_lang, indexer.lang_index 
-
 def build_inverted_index(paths, options):
   global b_dirs
   b_dirs = [ tempfile.mkdtemp(prefix="LDfeatureselect-",suffix='-bucket') for i in range(options.buckets) ]
 
-  chunk_size = min(len(paths) / (options.job_count*2), 100)
+  chunk_size = max(1,min(len(paths) / (options.job_count*2), 100))
   path_chunks = list(chunk(paths, chunk_size))
   # PASS 1: Tokenize documents into sets of terms
   with closing( mp.Pool(options.job_count, setup_pass1, 
@@ -415,6 +468,8 @@ def build_inverted_index(paths, options):
     pass1_out = pool.imap_unordered(pass1, enumerate(path_chunks), chunksize=1)
 
   doc_count = defaultdict(int)
+  #print "CHUNK SIZE", chunk_size
+  # TODO: Is this calculation correct? It seems off-by-one for when len(paths) is small
   total = len(paths)/chunk_size + (0 if len(paths)%chunk_size else 1)
   print "chunk size: %d (%d chunks)" % (chunk_size, total)
 
@@ -472,7 +527,9 @@ if __name__ == "__main__":
   parser.add_option("--max_order", dest="max_order", type="int", help="highest n-gram order to use", default=MAX_NGRAM_ORDER)
   parser.add_option("--feats_per_lang", dest="feats_per_lang", type="int", help="number of features to retain for each language", default=FEATURES_PER_LANG)
   parser.add_option("--df_tokens", dest="df_tokens", type="int", help="number of tokens to consider for each n-gram order", default=TOP_DOC_FREQ)
-  parser.add_option("--buckets", dest="buckets", type="int", help="numer of buckets to use in k-v pair generation", default=NUM_BUCKETS)
+  parser.add_option("--buckets", dest="buckets", type="int", help="number of buckets to use in k-v pair generation", default=NUM_BUCKETS)
+  parser.add_option("--min_domain", dest="min_domain", type="int", help="minimum number of domains a language must be present in", default=MIN_DOMAIN)
+  parser.add_option("-l","--langs",dest="langs", help="output list of languages to DIR", metavar="DIR")
 
   options, args = parser.parse_args()
 
@@ -487,13 +544,14 @@ if __name__ == "__main__":
   # work out output path
   if options.outfile:
     output_path = options.outfile 
-  elif options.corpus:
-    if os.path.basename(options.corpus):
-      output_path = os.path.basename(options.corpus+'.LDfeatures')
-    else:
-      output_path = options.corpus+'.LDfeatures'
   else:
-    output_path = 'a.LDfeatures'
+    output_path = os.path.basename(options.corpus)+'.LDfeatures'
+
+  # work out where to write langs to
+  if options.langs:
+    langs_path = options.langs
+  else:
+    langs_path = os.path.basename(options.corpus)+'.langs'
 
   # set tempdir
   if not os.path.exists(options.temp) and os.path.isdir(options.temp):
@@ -508,17 +566,23 @@ if __name__ == "__main__":
   if options.weights:
     print "weights path:", options.weights
 
-  # build a list of paths
-  paths = []
-  for dirpath, dirnames, filenames in os.walk(options.corpus, followlinks=True):
-    for f in filenames:
-      if random.random() < options.proportion:
-        # Each file has 'options.proportion' chance of being selected.
-        paths.append(os.path.join(dirpath, f))
-  print "will tokenize %d files" % len(paths)
+  indexer = CorpusIndexer(options.corpus, options.min_domain, options.proportion)
+
+  # Compute mappings between files, languages and domains
+  cm_domain, cm_lang = indexer.classmaps
+  lang_index = indexer.lang_index
+  print "langs ({0}): {1}".format(len(lang_index), sorted(lang_index.keys()))
+  print "domains ({0}): {1}".format(len(indexer.domain_index), sorted(indexer.domain_index.keys()))
+
+  # output the list of languages selected - this is particularly important when using
+  # min_domains
+  with open(langs_path,'w') as f:
+    for lang in sorted(lang_index.keys()):
+      f.write(lang+'\n')
 
   # Tokenize
-  cm_domain, cm_lang, lang_index = get_classmaps(paths)
+  paths = indexer.paths
+  print "will tokenize %d files" % len(paths)
   b_dirs, features, chunk_offsets = build_inverted_index(paths, options)
 
   # Convert features from character tuples to strings

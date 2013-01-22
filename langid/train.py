@@ -361,14 +361,22 @@ def generate_ptc(paths, nb_features, tk_nextmove, state2feat, cm):
     nb_ptc.extend(term_dist)
   return nb_ptc
 
-def read_corpus(path):
+def read_corpus(path, wanted_langs = None):
   print "data directory: ", path
+
+  if wanted_langs is not None:
+    wanted_langs = set(wanted_langs)
+
   langs = set()
   paths = []
   for dirpath, dirnames, filenames in os.walk(path, followlinks=True):
     for f in filenames:
-      paths.append(os.path.join(dirpath, f))
-      langs.add(os.path.basename(dirpath))
+      lang = os.path.basename(dirpath)
+      if wanted_langs is None or lang in wanted_langs:
+        # None actually represents we want all langs
+        paths.append(os.path.join(dirpath, f))
+        langs.add(lang)
+
   print "found %d files" % len(paths)
   print "langs(%d): %s" % (len(langs), sorted(langs))
   return paths, langs
@@ -400,11 +408,17 @@ if __name__ == "__main__":
   parser.add_option("-i","--input", dest="infile", help="read features from FILE", metavar="FILE")
   parser.add_option("-j","--jobs", dest="job_count", type="int", help="number of processes to use", default=mp.cpu_count())
   parser.add_option("-t","--temp",dest="temp", help="store temporary files in DIR", metavar="DIR", default=tempfile.gettempdir())
+  parser.add_option("-l","--langs",dest="langs", help="read list of languages from FILE", metavar="FILE")
   options, args = parser.parse_args()
   
   tempfile.tempdir = options.temp
 
-  paths, langs = read_corpus(options.corpus)
+  if options.langs:
+    langs = map(str.strip, open(options.langs))
+  else:
+    langs = None
+
+  paths, langs = read_corpus(options.corpus, langs)
   nb_features = map(eval, open(options.infile))
   nb_classes, cm = generate_cm(paths, langs)
   tk_nextmove, tk_output, state2feat = build_scanner(nb_features)
