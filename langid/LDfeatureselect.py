@@ -43,6 +43,7 @@ FEATURES_PER_LANG = 300 # number of features to select for each language
 NUM_BUCKETS = 64 # number of buckets to use in k-v pair generation
 TRAIN_PROP = 1.0 # proportion of training data available to use
 MIN_DOMAIN = 1 # minimum number of domains a language must be present in to be included
+CHUNKSIZE = 50 # maximum size of chunk (number of files tokenized - less = less memory use)
 
 import os, sys, optparse
 import collections
@@ -150,36 +151,6 @@ def unmarshal_iter(path):
       except EOFError:
         break
 
-def split_info(f_masks, class_map):
-  num_inst = f_masks.shape[1]
-  f_count = f_masks.sum(1) # sum across instances
-  f_weight = f_count / float(num_inst) 
-  f_entropy = numpy.empty((f_masks.shape[0], f_masks.shape[2]), dtype=float)
-  # TODO: This is the main cost. See if this can be made faster. 
-  for i, band in enumerate(f_masks):
-    f_entropy[i] = entropy((class_map[:,None,:] * band[...,None]).sum(0), axis=-1)
-  # nans are introduced by features that are entirely in a single band
-  # We must redefine this to 0 as otherwise we may lose information about other bands.
-  # TODO: Push this back into the definition of entropy?
-  f_entropy[numpy.isnan(f_entropy)] = 0
-  return (f_weight * f_entropy).sum(0) #sum across discrete bands
-
-def infogain(nonzero, class_map):
-  if nonzero.dtype != bool:
-    raise TypeError, "expected a boolean feature map"
-
-  # Feature map should be a boolean map
-  num_inst, num_feat = nonzero.shape
-  
-  # Calculate  the entropy of the class distribution over all instances 
-  H_P = entropy(class_map.sum(0))
-    
-  # compute information gain
-  zero = numpy.logical_not(nonzero)
-  x = numpy.concatenate((zero[None], nonzero[None]))
-  feature_weights = H_P - split_info(x, class_map)
-  return feature_weights
-
 @atexit.register
 def cleanup():
   global b_dirs
@@ -210,23 +181,27 @@ def pass1(arg):
   __procname = mp.current_process().name
   __b_freq = [tempfile.mkstemp(prefix=__procname, suffix='.freq', dir=p)[0] for p in __b_dirs]
   __b_list = [tempfile.mkstemp(prefix=__procname, suffix='.list', dir=p)[0] for p in __b_dirs]
-  chunk_id, chunk_paths = arg
+  chunk_id, chunk_items = arg
   
   extractor = Tokenizer(__maxorder)
   term_doc_freq = defaultdict(int)
-  term_doc_list = defaultdict(list)
+  term_lng_freq = defaultdict(lambda: defaultdict(int))
+  term_dom_freq = defaultdict(lambda: defaultdict(int))
 
-  for doc_index, path in enumerate(chunk_paths):
+  for doc_index, (domain_id, lang_id, path) in enumerate(chunk_items):
     with open(path) as f:
-      tokenset = set(extractor(f.read()))
+      # TODO: integrate this into the tokenizer. It is probably safe to assume
+      #       we will only ever apply this tokenizer to strings.
+      tokenset = set(map(''.join,extractor(f.read())))
       for token in tokenset:
         term_doc_freq[token] += 1
-        term_doc_list[token].append(doc_index)
+        term_lng_freq[token][lang_id] += 1
+        term_dom_freq[token][domain_id] += 1
 
   for key in term_doc_freq:
     bucket_index = hash(key) % len(__b_freq)
     os.write(__b_freq[bucket_index], marshal.dumps((key, term_doc_freq[key])))
-    os.write(__b_list[bucket_index], marshal.dumps((key, chunk_id, term_doc_list[key])))
+    os.write(__b_list[bucket_index], marshal.dumps((key, chunk_id, (term_lng_freq[key].items(),term_dom_freq[key].items()))))
 
   # Close all the open files
   for f in __b_freq + __b_list:
@@ -251,59 +226,97 @@ def pass2(bucket):
       docfreq.write(marshal.dumps(item))
   return count
 
-def setup_pass3(features, chunk_offsets, cm_domain, cm_lang):
-  global __features, __chunk_offsets, __cm_domain, __cm_lang
+def setup_pass3(features, dist_lang, dist_domain):
+  """
+  @param features a list of the features selected in pass2
+  @param dist_lang a vector of the background distribution over languages
+  @param dist_domain a vector of the background distribution over domains
+  """
+  global __features, __dist_lang, __dist_domain
   __features = features
-  __chunk_offsets = chunk_offsets
-  __cm_domain = cm_domain
-  __cm_lang = cm_lang
+  __dist_lang = dist_lang
+  __dist_domain = dist_domain
 
 def pass3(bucket):
   """
-  In this pass we actually compute information gain.
-  For each bucket, we need to load up the corresponding feature map.
-  This includes the filtering of top-DF features as identified in
-  the previous pass.
-  Then we compute information gain with respect to the domain
-  class map and the binarized language class maps.
+  In this pass we compute the information gain for each feature, binarized 
+  with respect to each language as well as unified over the set of all 
+  classes. 
+
+  @global __features the list of features selected by pass2
+  @global __dist_lang the global language distribution
+  @param bucket the bucketdir to process
   """
-  global __features, __chunk_offsets, __cm_domain, __cm_lang
+  global __features, __dist_lang, __dist_domain
    
-  # Select only our listed features
-  term_doc_map = defaultdict(list)
+  term_lng_freq = defaultdict(lambda: defaultdict(int))
+  term_dom_freq = defaultdict(lambda: defaultdict(int))
+  term_index = defaultdict(Enumerator())
+
   for path in os.listdir(bucket):
     if path.endswith('.list'):
-      for key, chunk_id, docids in unmarshal_iter(os.path.join(bucket,path)):
+      for key, chunk_id, (lng_freq, dom_freq) in unmarshal_iter(os.path.join(bucket,path)):
+        # Select only our listed features
         if key in __features:
-          offset = __chunk_offsets[chunk_id]
-          for docid in docids:
-            term_doc_map[key].append(docid+offset)
-  num_inst = __chunk_offsets[-1]
-  num_feat = len(term_doc_map)
+          term_index[key]
+          for lang, count in lng_freq:
+            term_lng_freq[key][lang] += count
+          for dom, count in dom_freq:
+            term_dom_freq[key][dom] += count
 
-  # Build the feature map for the chunk
-  feature_map = numpy.zeros((num_inst, num_feat), dtype=bool)
-  terms = []
-  for termid, term in enumerate(term_doc_map):
-    terms.append(term)
-    for docid in term_doc_map[term]:
-      feature_map[docid, termid] = True
+  num_term = len(term_index)
+  num_domain = len(__dist_domain)
+  num_lang = len(__dist_lang)
 
-  # Compute information gain over all domains as well as binarized per-language
-  w_lang = []
-  w_domain = infogain(feature_map, __cm_domain)
-  for langid in range(__cm_lang.shape[1]):
-    pos = __cm_lang[:, langid]
-    neg = numpy.logical_not(pos)
-    cm = numpy.hstack((neg[:,None], pos[:,None]))
-    w = infogain(feature_map, cm)
-    w_lang.append( w - w_domain )
+  domain_cm_pos = numpy.zeros((num_term, num_domain), dtype='int')
+  lang_cm_pos = numpy.zeros((num_term, num_lang), dtype='int')
 
-  w_lang = numpy.vstack(w_lang)
-  return terms, w_lang, w_domain
+  for term,term_id in term_index.iteritems():
+    # update domain matrix
+    dom_freq = term_dom_freq[term]
+    for domain_id, count in dom_freq.iteritems():
+      domain_cm_pos[term_id, domain_id] = count
 
-    
+    # update language matrix
+    lng_freq = term_lng_freq[term]
+    for lang_id, count in lng_freq.iteritems():
+      lang_cm_pos[term_id, lang_id] = count
 
+  domain_cm_neg = __dist_domain - domain_cm_pos
+  lang_cm_neg = __dist_lang - lang_cm_pos
+
+  domain_cm = numpy.dstack((domain_cm_neg, domain_cm_pos))
+  lang_cm = numpy.dstack((lang_cm_neg, lang_cm_pos))
+
+  x = domain_cm.sum(axis=1)
+  term_w = x / x.sum(axis=1)[:, None].astype(float)
+
+  # Entropy of the term-present/term-absent events
+  domain_e = entropy(domain_cm, axis=1)
+
+  # Information Gain with respect to the set of domains
+  ig_domain = entropy(__dist_domain) - (term_w * domain_e).sum(axis=1)
+
+  # Compute IG binarized with respect to each language
+  ig_lang = list()
+  for lang_id in xrange(num_lang):
+    num_doc = __dist_lang.sum()
+    prior = numpy.array((num_doc - __dist_lang[lang_id], __dist_lang[lang_id]), dtype=float) / num_doc
+
+    lang_cm_bin = numpy.zeros((num_term, 2, 2), dtype=int) # (term, p(term), p(lang|term))
+    lang_cm_bin[:,0,:] = lang_cm.sum(axis=1) - lang_cm[:,lang_id,:]
+    lang_cm_bin[:,1,:] = lang_cm[:,lang_id,:]
+
+    lang_e = entropy(lang_cm_bin, axis=1)
+    x = lang_cm_bin.sum(axis=1)
+    term_w = x / x.sum(axis=1)[:, None].astype(float)
+
+    ig_lang.append( entropy(prior) - (term_w * lang_e).sum(axis=1) )
+  # This is the actual LD weight being computed here.
+  w_lang = numpy.vstack(ig_lang) - ig_domain
+
+  terms = sorted(term_index, key=term_index.get)
+  return terms, w_lang, ig_domain
 
 def write_weights(path, weights):
   w = dict(weights)
@@ -381,6 +394,27 @@ class CorpusIndexer(object):
       self.lang_index = new_lang_index
 
 
+  @property
+  def dist_lang(self):
+    """
+    @returns A vector over frequency counts for each language
+    """
+    retval = numpy.zeros((len(self.lang_index),), dtype='int')
+    for d, l, n, p in self.items:
+      retval[l] += 1
+    return retval
+
+  @property
+  def dist_domain(self):
+    """
+    @returns A vector over frequency counts for each domain 
+    """
+    retval = numpy.zeros((len(self.domain_index),), dtype='int')
+    for d, l, n, p in self.items:
+      retval[d] += 1
+    return retval
+
+  # TODO: Remove this as it should no longer be needed
   @property 
   def classmaps(self):
     num_instances = len(self.items)
@@ -404,7 +438,7 @@ class CorpusIndexer(object):
     
     
 
-def select_LD_features(features, lang_index, b_dirs, chunk_offsets, cm_domain, cm_lang, options):
+def select_LD_features(features, lang_index, b_dirs, dist_lang, dist_domain, options):
   print "computing information gain"
   # Instead of receiving a single feature map, we now receive a list of paths,
   # each corresponding to a chunk containing a portion of the final feature set
@@ -413,12 +447,11 @@ def select_LD_features(features, lang_index, b_dirs, chunk_offsets, cm_domain, c
   # The parallelism should come at the feature chunk level,
   # so we can collapse IG into a non-parallelized function.
 
-  #setup_pass3(features, chunk_offsets, cm_domain, cm_lang)
-  #pass3_out = map(pass3, chunk_paths)
+  pass3_args = (features, dist_lang, dist_domain)
+  #setup_pass3(*pass3_args)
+  #pass3_out = map(pass3, b_dirs)
 
-  with closing( mp.Pool(options.job_count, setup_pass3, 
-                (features, chunk_offsets, cm_domain, cm_lang))
-              ) as pool:
+  with closing( mp.Pool(options.job_count, setup_pass3, pass3_args) ) as pool:
     pass3_out = pool.imap_unordered(pass3, b_dirs, chunksize=1)
 
   num_chunk = len(b_dirs)
@@ -453,22 +486,25 @@ def select_LD_features(features, lang_index, b_dirs, chunk_offsets, cm_domain, c
 
   return final_feature_set
     
-
-def build_inverted_index(paths, options):
+def build_index(items, options):
+  """
+  @param items a list of (language, path) pairs
+  """
   global b_dirs
   b_dirs = [ tempfile.mkdtemp(prefix="LDfeatureselect-",suffix='-bucket') for i in range(options.buckets) ]
 
-  chunk_size = max(1,min(len(paths) / (options.job_count*2), 100))
-  path_chunks = list(chunk(paths, chunk_size))
+  chunk_size = max(1,min(len(items) / (options.job_count*2), options.chunksize))
+  item_chunks = list(chunk(items, chunk_size))
+  pass1_arg = enumerate(item_chunks)
   # PASS 1: Tokenize documents into sets of terms
   with closing( mp.Pool(options.job_count, setup_pass1, 
                 (options.max_order, b_dirs))
               ) as pool:
-    pass1_out = pool.imap_unordered(pass1, enumerate(path_chunks), chunksize=1)
+    pass1_out = pool.imap_unordered(pass1, pass1_arg, chunksize=1)
 
   doc_count = defaultdict(int)
   #print "CHUNK SIZE", chunk_size
-  chunk_count = len(path_chunks)
+  chunk_count = len(item_chunks)
   print "chunk size: %d (%d chunks)" % (chunk_size, chunk_count)
 
   wrotekeys = 0
@@ -507,12 +543,7 @@ def build_inverted_index(paths, options):
   features = sorted(features)
   print "candidate features: ", len(features)
 
-  # Work out the path chunk start offsets
-  chunk_offsets = [0]
-  for c in path_chunks:
-    chunk_offsets.append(chunk_offsets[-1] + len(c))
-
-  return b_dirs, features, chunk_offsets
+  return b_dirs, features
 
 if __name__ == "__main__":
   parser = optparse.OptionParser()
@@ -527,6 +558,7 @@ if __name__ == "__main__":
   parser.add_option("--df_tokens", dest="df_tokens", type="int", help="number of tokens to consider for each n-gram order", default=TOP_DOC_FREQ)
   parser.add_option("--buckets", dest="buckets", type="int", help="number of buckets to use in k-v pair generation", default=NUM_BUCKETS)
   parser.add_option("--min_domain", dest="min_domain", type="int", help="minimum number of domains a language must be present in", default=MIN_DOMAIN)
+  parser.add_option("--chunksize", dest="chunksize", type="int", help="max chunk size (number of files to tokenize at a time - smaller should reduce memory use)", default=CHUNKSIZE)
   parser.add_option("-l","--langs",dest="langs", help="output list of languages to DIR", metavar="DIR")
 
   options, args = parser.parse_args()
@@ -567,10 +599,12 @@ if __name__ == "__main__":
   indexer = CorpusIndexer(options.corpus, options.min_domain, options.proportion)
 
   # Compute mappings between files, languages and domains
-  cm_domain, cm_lang = indexer.classmaps
+  dist_lang = indexer.dist_lang
+  dist_domain = indexer.dist_domain
   lang_index = indexer.lang_index
-  print "langs ({0}): {1}".format(len(lang_index), sorted(lang_index.keys()))
-  print "domains ({0}): {1}".format(len(indexer.domain_index), sorted(indexer.domain_index.keys()))
+  lang_info = ' '.join(("{0}({1})".format(k, dist_lang[v]) for k,v in lang_index.items()))
+  print "langs({0}): {1}".format(len(dist_lang), lang_info)
+  print "domains({0}): {1}".format(len(dist_domain), sorted(indexer.domain_index.keys()))
 
   # output the list of languages selected - this is particularly important when using
   # min_domains
@@ -579,16 +613,14 @@ if __name__ == "__main__":
       f.write(lang+'\n')
 
   # Tokenize
-  paths = indexer.paths
-  print "will tokenize %d files" % len(paths)
-  b_dirs, features, chunk_offsets = build_inverted_index(paths, options)
+  items = [ (d,l,p) for (d,l,n,p) in indexer.items ]
+  print "will tokenize %d files" % len(items)
+  b_dirs, features = build_index(items, options)
 
-  # Convert features from character tuples to strings
-  #features = [ ''.join(f) for f in features ]
 
   # Compute LD from inverted index
   try:
-    final_feature_set = select_LD_features(features, lang_index, b_dirs, chunk_offsets, cm_domain, cm_lang, options)
+    final_feature_set = select_LD_features(features, lang_index, b_dirs, dist_lang, dist_domain, options)
   except OSError, e:
     print e
     import pdb;pdb.pm()
