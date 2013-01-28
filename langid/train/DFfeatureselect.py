@@ -1,0 +1,151 @@
+#!/usr/bin/env python
+"""
+DFfeatureselect.py - 
+First step in the LD feature selection process, select features based on document
+frequency.
+
+Marco Lui January 2013
+
+Copyright 2013 Marco Lui <saffsd@gmail.com>. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification, are
+permitted provided that the following conditions are met:
+
+   1. Redistributions of source code must retain the above copyright notice, this list of
+      conditions and the following disclaimer.
+
+   2. Redistributions in binary form must reproduce the above copyright notice, this list
+      of conditions and the following disclaimer in the documentation and/or other materials
+      provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER ``AS IS'' AND ANY EXPRESS OR IMPLIED
+WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
+CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+The views and conclusions contained in the software and documentation are those of the
+authors and should not be interpreted as representing official policies, either expressed
+or implied, of the copyright holder.
+"""
+
+######
+# Default values
+# Can be overriden with command-line options
+######
+MAX_NGRAM_ORDER = 4 # largest order of n-grams to consider
+TOP_DOC_FREQ = 15000 # number of tokens to consider for each order
+
+import os, sys, argparse
+import collections
+import csv
+import shutil
+import tempfile
+import marshal
+import random
+import numpy
+import cPickle
+import multiprocessing as mp
+import atexit
+from itertools import tee, imap, islice
+from collections import defaultdict
+from datetime import datetime
+from contextlib import closing
+
+from common import Enumerator, unmarshal_iter
+
+def pass_sum_df(bucket):
+  """
+  Compute document frequency (df) by summing up (key,domain,count) triplets
+  over all domains.
+  """
+  doc_count = defaultdict(int)
+  count = 0
+  with open(os.path.join(bucket, "docfreq"),'wb') as docfreq:
+    for path in os.listdir(bucket):
+      # We use the domain buckets as there are usually less domains
+      if path.endswith('.domain'):
+        for key, _, value in unmarshal_iter(os.path.join(bucket,path)):
+          doc_count[key] += value
+          count += 1
+    
+    for item in doc_count.iteritems():
+      docfreq.write(marshal.dumps(item))
+  return count
+
+def ngram(bucketlist, jobs=None, max_order=MAX_NGRAM_ORDER, df_tokens=TOP_DOC_FREQ):
+  """
+  DF feature selection for byte-ngram tokenization
+  """
+
+  if jobs is None:
+    jobs = mp.cpu_count() + 4
+
+  if jobs > 1:
+    with closing( mp.Pool(jobs) ) as pool:
+      pass_sum_df_out = pool.imap_unordered(pass_sum_df, bucketlist, chunksize=1)
+  else:
+    pass_sum_df_out = imap(pass_sum_df, bucketlist)
+
+  for i, keycount in enumerate(pass_sum_df_out):
+    print "processed bucket (%d/%d) [%d keys]" % (i+1, len(bucketlist), keycount)
+
+  if jobs > 1:
+    pool.join()
+
+  # build the global term->df mapping
+  doc_count = {}
+  for bucket in bucketlist:
+    for key, value in unmarshal_iter(os.path.join(bucket, 'docfreq')):
+      doc_count[key] = value
+
+  print "unique features:", len(doc_count)
+
+  # Work out the set of features to compute IG
+  features = set()
+  for i in range(1, max_order+1):
+    d = dict( (k, doc_count[k]) for k in doc_count if len(k) == i)
+    features |= set(sorted(d, key=d.get, reverse=True)[:df_tokens])
+  features = sorted(features)
+  print "candidate features: ", len(features)
+  
+  return features
+
+
+
+if __name__ == "__main__":
+  parser = argparse.ArgumentParser()
+  parser.add_argument("-j","--jobs", type=int, metavar='N', help="spawn N processes (set to 1 for no paralleization)")
+  parser.add_argument("-f","--features", metavar='FEATURE_FILE', help="output features to FEATURE_FILE")
+  parser.add_argument("--df_tokens", type=int, help="number of tokens to consider for each n-gram order", default=TOP_DOC_FREQ)
+  parser.add_argument("--max_order", type=int, help="highest n-gram order to use", default=MAX_NGRAM_ORDER)
+  parser.add_argument("bucketlist", metavar='BUCKET_FILE', help="read list of paths to buckets from BUCKET_FILE")
+  
+  args = parser.parse_args()
+
+  if args.features:
+    feature_path = args.features
+  else:
+    feature_path = os.path.splitext(args.bucketlist)[0] + '.DFfeats'
+
+  # display paths
+  print "buckets path:", args.bucketlist
+  print "features output path:", feature_path
+  print "max ngram order:", args.max_order
+  print "tokens per order:", args.df_tokens
+
+  with open(args.bucketlist) as f:
+    bucketlist = map(str.strip, f)
+
+  feats = ngram(bucketlist, args.jobs, args.max_order, args.df_tokens)
+
+  with open(feature_path,'w') as f:
+    for feat in feats:
+      print >>f, repr(feat)
+  print 'wrote features to "%s"' % feature_path 
+
+  
