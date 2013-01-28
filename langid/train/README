@@ -1,0 +1,16 @@
+Refactoring of the langid.py training tools, to allow for
+more flexibility and easier experimentation. 
+
+Planned tools:
+1) index.py  - index a corpus. Produce a list of file, corpus, language pairs.
+2) tokenize.py - take an index and tokenize the corresponding files
+3) DFfeatureselect.py - choose features by document frequency
+3) IGweight.py - compute the IG weights for language and for domain
+4) LDfeatureselect.py - take the IG weights and use them to select a feature set
+5) scanner.py - build a scanner on the basis of a feature set
+6) train.py - learn NB parameters using an indexed corpus and a scanner
+
+Optional:
+A single tool that integrates all steps, calling on each submodule as required.
+
+Marco Lui, January 2013
