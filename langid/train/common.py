@@ -68,6 +68,18 @@ def write_weights(path, weights):
       except TypeError:
         row.append(w[k])
       writer.writerow(row)
+
+import numpy
+def read_weights(path):
+  with open(path) as f:
+    reader = csv.reader(f)
+    retval = dict()
+    for row in reader:
+      key = eval(row[0])
+      #val = numpy.array( map(float,row[1:]) )
+      val = numpy.array( [float(v) if v != 'nan' else 0. for v in row[1:]] )
+      retval[key] = val
+  return retval
       
 
 from itertools import imap
