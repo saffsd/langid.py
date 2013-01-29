@@ -49,6 +49,27 @@ def makedir(path):
     if e.errno != errno.EEXIST:
       raise
 
+import csv
+def write_weights(path, weights):
+  w = dict(weights)
+  with open(path, 'w') as f:
+    writer = csv.writer(f)
+    try:
+      key_order = sorted(w, key=w.get, reverse=True)
+    except ValueError:
+      # Could not order keys by value, value is probably a vector.
+      # Order keys alphabetically in this case.
+      key_order = sorted(w)
+
+    for k in key_order:
+      row = [repr(k)]
+      try:
+        row.extend(w[k])
+      except TypeError:
+        row.append(w[k])
+      writer.writerow(row)
+      
+
 from itertools import imap
 from contextlib import contextmanager, closing
 import multiprocessing as mp
