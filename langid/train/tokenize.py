@@ -105,8 +105,8 @@ def pass_tokenize(chunk_items):
   """
   global __maxorder, __b_dirs, __extractor
   __procname = mp.current_process().name
-  b_freq_lang = [tempfile.mkstemp(prefix=__procname+'-', suffix='.domain', dir=p)[0] for p in __b_dirs]
-  b_freq_domain = [tempfile.mkstemp(prefix=__procname+'-', suffix='.lang', dir=p)[0] for p in __b_dirs]
+  b_freq_lang = [tempfile.mkstemp(prefix=__procname+'-', suffix='.lang', dir=p)[0] for p in __b_dirs]
+  b_freq_domain = [tempfile.mkstemp(prefix=__procname+'-', suffix='.domain', dir=p)[0] for p in __b_dirs]
   
   extractor = __tokenizer
   term_lng_freq = defaultdict(lambda: defaultdict(int))
