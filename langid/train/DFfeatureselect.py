@@ -56,7 +56,7 @@ from collections import defaultdict
 from datetime import datetime
 from contextlib import closing
 
-from common import Enumerator, unmarshal_iter
+from common import Enumerator, unmarshal_iter, MapPool
 
 def pass_sum_df(bucket):
   """
@@ -85,17 +85,11 @@ def ngram(bucketlist, jobs=None, max_order=MAX_NGRAM_ORDER, df_tokens=TOP_DOC_FR
   if jobs is None:
     jobs = mp.cpu_count() + 4
 
-  if jobs > 1:
-    with closing( mp.Pool(jobs) ) as pool:
-      pass_sum_df_out = pool.imap_unordered(pass_sum_df, bucketlist, chunksize=1)
-  else:
-    pass_sum_df_out = imap(pass_sum_df, bucketlist)
+  with MapPool(jobs) as f:
+    pass_sum_df_out = f(pass_sum_df, bucketlist)
 
-  for i, keycount in enumerate(pass_sum_df_out):
-    print "processed bucket (%d/%d) [%d keys]" % (i+1, len(bucketlist), keycount)
-
-  if jobs > 1:
-    pool.join()
+    for i, keycount in enumerate(pass_sum_df_out):
+      print "processed bucket (%d/%d) [%d keys]" % (i+1, len(bucketlist), keycount)
 
   # build the global term->df mapping
   doc_count = {}
@@ -123,22 +117,25 @@ if __name__ == "__main__":
   parser.add_argument("-f","--features", metavar='FEATURE_FILE', help="output features to FEATURE_FILE")
   parser.add_argument("--df_tokens", type=int, help="number of tokens to consider for each n-gram order", default=TOP_DOC_FREQ)
   parser.add_argument("--max_order", type=int, help="highest n-gram order to use", default=MAX_NGRAM_ORDER)
-  parser.add_argument("bucketlist", metavar='BUCKET_FILE', help="read list of paths to buckets from BUCKET_FILE")
+  parser.add_argument("model", metavar='MODEL_DIR', help="read index and produce output in MODEL_DIR")
   
   args = parser.parse_args()
 
+  
   if args.features:
     feature_path = args.features
   else:
-    feature_path = os.path.splitext(args.bucketlist)[0] + '.DFfeats'
+    feature_path = os.path.join(args.model, 'DFfeats')
+
+  bucketlist_path = os.path.join(args.model, 'bucketlist')
 
   # display paths
-  print "buckets path:", args.bucketlist
+  print "buckets path:", bucketlist_path
   print "features output path:", feature_path
   print "max ngram order:", args.max_order
   print "tokens per order:", args.df_tokens
 
-  with open(args.bucketlist) as f:
+  with open(bucketlist_path) as f:
     bucketlist = map(str.strip, f)
 
   feats = ngram(bucketlist, args.jobs, args.max_order, args.df_tokens)

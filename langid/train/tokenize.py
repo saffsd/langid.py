@@ -50,11 +50,10 @@ import marshal
 import multiprocessing as mp
 import atexit
 
-from itertools import tee, imap
+from itertools import tee 
 from collections import defaultdict
-from contextlib import closing
 
-from common import makedir, chunk
+from common import makedir, chunk, MapPool
 
 class Tokenizer(object):
   def __init__(self, min_order=1, max_order=3):
@@ -155,24 +154,18 @@ def build_index(items, outdir, buckets=NUM_BUCKETS, jobs=None, chunksize=CHUNKSI
   item_chunks = list(chunk(items, chunk_size))
   tokenizer = Tokenizer(1,max_order)
   pass_tokenize_globals = (tokenizer, b_dirs)
-  if jobs > 1:
-    with closing( mp.Pool(jobs, setup_pass_tokenize, pass_tokenize_globals)) as pool:
-      pass_tokenize_out = pool.imap_unordered(pass_tokenize, item_chunks, chunksize=1)
-  else:
-    setup_pass_tokenize(*pass_tokenize_globals)
-    pass_tokenize_out = imap(pass_tokenize, item_chunks)
+
+  with MapPool(jobs, setup_pass_tokenize, pass_tokenize_globals) as f:
+    pass_tokenize_out = f(pass_tokenize, item_chunks)
 
 
-  doc_count = defaultdict(int)
-  chunk_count = len(item_chunks)
-  print "chunk size: {0} ({1} chunks)".format(chunk_size, chunk_count)
-  print "job count: {0}".format(jobs)
+    doc_count = defaultdict(int)
+    chunk_count = len(item_chunks)
+    print "chunk size: {0} ({1} chunks)".format(chunk_size, chunk_count)
+    print "job count: {0}".format(jobs)
 
-  for i, keycount in enumerate(pass_tokenize_out):
-    print "tokenized chunk (%d/%d) [%d keys]" % (i+1,chunk_count, keycount)
-
-  if jobs > 1:
-    pool.join()
+    for i, keycount in enumerate(pass_tokenize_out):
+      print "tokenized chunk (%d/%d) [%d keys]" % (i+1,chunk_count, keycount)
 
   complete = True
 
@@ -182,40 +175,35 @@ if __name__ == "__main__":
   parser = argparse.ArgumentParser()
   parser.add_argument("-j","--jobs", type=int, metavar='N', help="spawn N processes (set to 1 for no paralleization)")
   parser.add_argument("--buckets", type=int, metavar='N', help="distribute features into N buckets", default=NUM_BUCKETS)
-  parser.add_argument("-i", "--index", metavar='FILE', help="read index from FILE")
-  parser.add_argument("-o","--output", metavar='DIR', help="output buckets to DIR")
-  parser.add_argument("-b","--bucketlist", metavar='FILE', help="output paths to buckets to FILE")
   parser.add_argument("--max_order", type=int, help="highest n-gram order to use", default=MAX_NGRAM_ORDER)
   parser.add_argument("--chunksize", type=int, help="max chunk size (number of files to tokenize at a time - smaller should reduce memory use)", default=CHUNKSIZE)
+  parser.add_argument("-t", "--temp", metavar='TEMP_DIR', help="store buckets in TEMP_DIR instead of in MODEL_DIR/buckets")
+  parser.add_argument("model", metavar='MODEL_DIR', help="read index and produce output in MODEL_DIR")
   
   args = parser.parse_args()
   
-  # check args
-  if not args.index:
-    parser.error("index(-i) must be specified")
 
-  if not args.output:
-    parser.error("output path(-o) must be specified")
-
-  makedir(args.output)
-
-  if args.bucketlist:
-    bucketlist_path = args.bucketlist
+  if args.temp:
+    buckets_dir = args.temp
   else:
-    bucketlist_path = os.path.basename(args.index) + '.bucketlist'
+    buckets_dir = os.path.join(args.model, 'buckets')
+  makedir(buckets_dir)
+
+  bucketlist_path = os.path.join(args.model, 'bucketlist')
+  index_path = os.path.join(args.model, 'paths')
 
   # display paths
-  print "index path:", args.index
+  print "index path:", index_path
   print "bucketlist path:", bucketlist_path
-  print "output path:", args.output
+  print "buckets path:", buckets_dir
 
-  with open(args.index) as f:
+  with open(index_path) as f:
     reader = csv.reader(f)
     items = list(reader)
 
   # Tokenize
   print "will tokenize %d files" % len(items)
-  b_dirs = build_index(items, args.output, args.buckets, args.jobs, args.chunksize, max_order=args.max_order)
+  b_dirs = build_index(items, buckets_dir, args.buckets, args.jobs, args.chunksize, max_order=args.max_order)
 
   # output the paths to the buckets
   with open(bucketlist_path,'w') as f:

@@ -20,6 +20,11 @@ Index a corpus that is stored in a directory hierarchy as follows:
     - ...
   - ...
 
+This produces 3 files: 
+* index: a list of paths, together with the langid and domainid as integers
+* lang_index: a list of languages in ascending order of id, with the count for each
+* domain_index: a list of domains in ascending order of id, with the count for each
+
 Marco Lui, January 2013
 
 Copyright 2013 Marco Lui <saffsd@gmail.com>. All rights reserved.
@@ -63,7 +68,7 @@ import numpy
 from itertools import tee, imap, islice
 from collections import defaultdict
 
-from common import Enumerator
+from common import Enumerator, makedir
 
 class CorpusIndexer(object):
   """
@@ -176,25 +181,28 @@ class CorpusIndexer(object):
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser()
-  parser.add_argument("-c","--corpus", help="read corpus from DIR", metavar="DIR")
   parser.add_argument("-p","--proportion", type=float, help="proportion of training data to use", default=TRAIN_PROP)
-  parser.add_argument("-o","--output", help="produce output in DIR", metavar="DIR", default='.')
+  parser.add_argument("-m","--model", help="save output to MODEL_DIR", metavar="MODEL_DIR")
   parser.add_argument("--min_domain", type=int, help="minimum number of domains a language must be present in", default=MIN_DOMAIN)
+  parser.add_argument("corpus", help="read corpus from CORPUS_DIR", metavar="CORPUS_DIR")
 
   args = parser.parse_args()
 
-  # check options
-  if not args.corpus:
-    parser.error("corpus(-c) must be specified")
-
   corpus_name = os.path.basename(args.corpus)
+  if args.model:
+    model_dir = args.model
+  else:
+    model_dir = os.path.join('.', corpus_name+'.model')
 
-  langs_path = os.path.join(args.output, corpus_name + '.langs')
-  domains_path = os.path.join(args.output, corpus_name + '.domains')
-  index_path = os.path.join(args.output, corpus_name + '.index')
+  makedir(model_dir)
+
+  langs_path = os.path.join(model_dir, 'lang_index')
+  domains_path = os.path.join(model_dir, 'domain_index')
+  index_path = os.path.join(model_dir, 'paths')
 
   # display paths
   print "corpus path:", args.corpus
+  print "model path:", model_dir
   print "writing langs to:", langs_path
   print "writing domains to:", domains_path
   print "writing index to:", index_path
@@ -216,17 +224,17 @@ if __name__ == "__main__":
 
   # output the language index
   with open(langs_path,'w') as f:
-    for lang in sorted(lang_index.keys(), key=lang_index.get):
-      f.write(lang+'\n')
+    writer = csv.writer(f)
+    writer.writerows((l, lang_dist[lang_index[l]]) 
+        for l in sorted(lang_index.keys(), key=lang_index.get))
 
   # output the domain index
   with open(domains_path,'w') as f:
-    for domain in sorted(domain_index.keys(), key=domain_index.get):
-      f.write(domain+'\n')
+    writer = csv.writer(f)
+    writer.writerows((d, domain_dist[domain_index[d]]) 
+        for d in sorted(domain_index.keys(), key=domain_index.get))
 
   # output items found
   with open(index_path,'w') as f:
     writer = csv.writer(f)
     writer.writerows( (d,l,p) for (d,l,n,p) in indexer.items )
-
-
