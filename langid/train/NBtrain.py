@@ -39,14 +39,14 @@ import base64, bz2, cPickle
 import os, sys, argparse, csv
 import array
 import numpy as np
-import multiprocessing as mp
 import tempfile
 import marshal
 import atexit, shutil
+import multiprocessing as mp
 from collections import deque, defaultdict
 from contextlib import closing
 
-from common import chunk, unmarshal_iter, read_features, index
+from common import chunk, unmarshal_iter, read_features, index, MapPool
 
 def offsets(chunks):
   # Work out the path chunk start offsets
@@ -186,20 +186,19 @@ def learn_ptc(paths, nb_features, tk_nextmove, state2feat, cm, job_count=None):
 
 
   output_states = set(state2feat)
-  with closing( mp.Pool(job_count, setup_pass1, (nm_arr, output_states, state2feat, b_dirs, bucket_map)) 
-              ) as pool:
-    pass1_out = pool.imap_unordered(pass1, enumerate(path_chunks))
-  pool.join()
+  
+  pass1_args = (nm_arr, output_states, state2feat, b_dirs, bucket_map)
+  with MapPool(job_count, setup_pass1, pass1_args) as f:
+    pass1_out = f(pass1, enumerate(path_chunks))
 
   write_count = sum(pass1_out)
   print "wrote a total of %d keys" % write_count
 
   f_chunk_sizes = map(len, feat_chunks)
   f_chunk_offsets = offsets(feat_chunks)
-  with closing( mp.Pool(job_count, setup_pass2, (cm, offsets(path_chunks), num_instances)) 
-              ) as pool:
-    pass2_out = pool.imap(pass2, zip(f_chunk_sizes, f_chunk_offsets, b_dirs))
-  pool.join()
+  pass2_args = (cm, offsets(path_chunks), num_instances)
+  with MapPool(job_count, setup_pass2, pass2_args) as f:
+    pass2_out = f(pass2, zip(f_chunk_sizes, f_chunk_offsets, b_dirs))
 
   reads, pass2_out = zip(*pass2_out)
   read_count = sum(reads)
