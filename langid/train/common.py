@@ -102,6 +102,15 @@ def write_features(features, path):
       print >>f, repr(feat)
 
 
+def index(seq):
+  """
+  Build an index for a sequence of items. Assumes
+  that the items in the sequence are unique.
+  @param seq the sequence to index
+  @returns a dictionary from item to position in the sequence
+  """
+  return dict((k,v) for (v,k) in enumerate(seq))
+
       
 
 from itertools import imap
