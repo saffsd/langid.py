@@ -36,7 +36,6 @@ or implied, of the copyright holder.
 
 import os, sys, argparse 
 import csv
-import tempfile
 import numpy
 import multiprocessing as mp
 from itertools import tee, imap, islice
