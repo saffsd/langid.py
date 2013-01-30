@@ -119,7 +119,10 @@ def setup_pass_ptc(cm, num_instances):
 
 def pass_ptc(b_dir):
   """
-  Take a bucket, form a feature map, learn the nb_ptc for it.
+  Take a bucket, form a feature map, compute the count of
+  each feature in each class.
+  @param b_dir path to the bucket directory
+  @returns (read_count, f_ids, prod) 
   """
   global __cm, __num_instances
 
