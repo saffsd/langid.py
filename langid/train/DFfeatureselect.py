@@ -56,7 +56,7 @@ from collections import defaultdict
 from datetime import datetime
 from contextlib import closing
 
-from common import Enumerator, unmarshal_iter, MapPool
+from common import Enumerator, unmarshal_iter, MapPool, write_features
 
 def pass_sum_df(bucket):
   """
@@ -140,9 +140,7 @@ if __name__ == "__main__":
 
   feats = ngram(bucketlist, args.jobs, args.max_order, args.df_tokens)
 
-  with open(feature_path,'w') as f:
-    for feat in feats:
-      print >>f, repr(feat)
+  write_features(feats, feature_path)
   print 'wrote features to "%s"' % feature_path 
 
   

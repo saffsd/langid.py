@@ -43,7 +43,7 @@ from itertools import tee, imap, islice
 from collections import defaultdict
 from contextlib import closing
 
-from common import unmarshal_iter, MapPool, Enumerator, write_weights
+from common import unmarshal_iter, MapPool, Enumerator, write_weights, read_features 
 
 def entropy(v, axis=0):
   """
@@ -174,8 +174,11 @@ def compute_IG(bucketlist, features, dist, binarize, suffix, job_count=None):
 
   return zip(terms, weights)
 
-
 def read_dist(path):
+  """
+  Read the distribution from a file containing item, count pairs.
+  @param path path to read form
+  """
   with open(path) as f:
     reader = csv.reader(f)
     return numpy.array(zip(*reader)[1], dtype=int)
@@ -205,7 +208,7 @@ if __name__ == "__main__":
     parser.error('{0} does not exist'.format(feature_path))
 
   bucketlist = map(str.strip, open(bucketlist_path))
-  features = map(eval, open(feature_path))
+  features = read_features(feature_path)
 
   if args.domain:
     index_path = os.path.join(args.model,'domain_index')

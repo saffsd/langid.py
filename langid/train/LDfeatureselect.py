@@ -46,7 +46,7 @@ import numpy
 import multiprocessing as mp
 from collections import defaultdict
 
-from common import read_weights, Enumerator
+from common import read_weights, Enumerator, write_features
 
 def select_LD_features(ig_lang, ig_domain, feats_per_lang):
   assert len(ig_lang) == len(ig_domain)
@@ -100,8 +100,6 @@ if __name__ == "__main__":
   final_feature_set = reduce(set.union, map(set, features_per_lang.values()))
   print 'selected %d features' % len(final_feature_set)
 
-  with open(feature_path,'w') as f:
-    for feat in sorted(final_feature_set):
-      print >>f, repr(feat)
+  write_features(sorted(final_feature_set), feature_path)
   print 'wrote features to "%s"' % feature_path 
 

@@ -80,6 +80,28 @@ def read_weights(path):
       val = numpy.array( [float(v) if v != 'nan' else 0. for v in row[1:]] )
       retval[key] = val
   return retval
+
+def read_features(path):
+  """
+  Read a list of features in feature-per-line format, where each
+  feature is a repr and needs to be evaled.
+  @param path path to read from
+  """
+  with open(path) as f:
+    return map(eval, f)
+
+def write_features(features, path):
+  """
+  Write a list of features to a file at `path`. The repr of each
+  feature is written on a new line.
+  @param features list of features to write
+  @param path path to write to
+  """
+  with open(path,'w') as f:
+    for feat in features:
+      print >>f, repr(feat)
+
+
       
 
 from itertools import imap
