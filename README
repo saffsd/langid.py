@@ -151,44 +151,105 @@ When using langid.py as a library, the set_languages method can be used to const
 
 Training a model
 ----------------
-Training a model for langid.py requires a large amount of computation for the feature selection stage.
-We provide a parallelized model generator that can run on a modern desktop machine. It uses a sharding
-technique similar to map-reduce to allow paralellization while running in constant memory.
+We provide a full set of training tools to train a model for langid.py on user-supplied data.
+The system is parallelized to fully utilize modern multiprocessor machines, using a sharding
+technique similar to MapReduce to allow parallelization while running in constant memory.
 
-The model training is broken into two steps:
+The process is now broken into 6 tools, each performing a specific task. This allows the user
+to inspect the intermediates produced, and also allows for some parameter tuning without
+repeating some of the more expensive steps in the computation. By far the most expensive step
+is the computation of information gain, which will make up more than 90% of the total computation
+time.
 
-1. LD Feature Selection (LDfeatureselect.py)
-2. Naive Bayes learning (train.py)
+The tools are:
 
-The two steps are fully independent, and can potentially be run on different data sets. It is also possible 
-to replace the feature selection with an alternative set of features. 
+1) index.py  - index a corpus. Produce a list of file, corpus, language pairs.
+2) tokenize.py - take an index and tokenize the corresponding files
+3) DFfeatureselect.py - choose features by document frequency
+3) IGweight.py - compute the IG weights for language and for domain
+4) LDfeatureselect.py - take the IG weights and use them to select a feature set
+5) scanner.py - build a scanner on the basis of a feature set
+6) NBtrain.py - learn NB parameters using an indexed corpus and a scanner
 
-To train a model, we require multiple corpora of monolingual documents. Each document should be a single file,
-and each file should be in a 2-deep folder hierarchy, with language nested within domain. For example, we
-may have a number of English files:
+The tools can be found in langid/train subfolder. The tools langid/train.py and 
+langid/LDfeatureselect.py are deprecated and will be removed at a later date.
+
+Each tool can be called with '--help' as the only parameter to provide an overview of the 
+functionality. 
+
+To train a model, we require multiple corpora of monolingual documents. Each document should 
+be a single file, and each file should be in a 2-deep folder hierarchy, with language nested 
+within domain. For example, we may have a number of English files:
 
   ./corpus/domain1/en/File1.txt
   ./corpus/domainX/en/001-file.xml
 
-This is the hierarchy that both LDfeatureselect.py and train.py expect. The -c argment for both is the name
-of the directory containing the domain-specific subdirectories, in this example './corpus'. The output file
-is specified with the '-o' option.
+To use default settings, very few parameters need to be provided. Given a corpus in the format
+described above at './corpus', the following is an example set of invocations that would
+result in a model being trained, with a brief description of what each step does:
 
-To learn features, we would invoke::
+To build a list of training documents:
 
-    python LDfeatureselect.py -c corpus -o features
+    python index.py ./corpus
 
-This would create a file called 'features' containing features in a one-per-line format that can be parsed 
-by python's eval().
+This will create a directory 'corpus.model', and produces a list of paths to documents in the
+corpus, with their associated language and domain.
 
-To then generate a model using the same corpus and the selected features, we would invoke::
-    
-    python train.py -c corpus -o model -i features
+We then tokenize the files using the default byte n-gram tokenizer:
 
-This will generate a compressed model in a file called 'model'. The path to this file can then be passed 
-as a command-line argument to langid.py::
+    python tokenize.py corpus.model
 
-    python langid.py -m model
+This runs each file through the tokenizer, tabulating the frequency of each token according
+to language and domain. This information is distributed into buckets according to a hash
+of the token, such that all the counts for any given token will be in the same bucket.
+
+The next step is to identify the most frequent tokens by document frequency:
+
+    python DFfeatureselect.py corpus.model
+
+This sums up the frequency counts per token in each bucket, and produces a list of the highest-df
+tokens for use in the IG calculation stage. Note that this implementation of DFfeatureselect
+assumes byte n-gram tokenization, and will thus select a fixed number of features per ngram order.
+If tokenization is replaced with a word-based tokenizer, this should be replaced accordingly.
+
+We then compute the IG weights of each of the top features by DF. This is computed separately
+for domain and for language:
+
+    python IGweight.py -d corpus.model
+    python IGweight.py -lb corpus.model
+
+Based on the IG weights, we compute the LD score for each token:
+
+    python LDfeatureselect.py corpus.model
+
+This produces the final list of LD features to use for building the NB model.
+
+We then assemble the scanner:
+
+    python scanner.py corpus.model
+
+The scanner is a compiled DFA over the set of features that can be used to count the number of times 
+each of the features occurs in a document in a single pass over the document.
+
+Finally, we learn the actual NB parameters:
+
+    python NBtrain.py corpus.model
+
+This performs a second pass over the entire corpus, tokenizing it with the scanner from the previous
+step, and computing the Naive Bayes parameters P(C) and p(t|C). It then compiles the parameters
+and the scanner into a model compatible with langid.py. 
+
+In this example, the final model will be at the following path:
+
+  ./corpus.model/model
+
+This model can then be used in langid.py by invoking it with the '-m' command-line option as 
+follows:
+
+    python langid.py -m ./corpus.model/model
+
+It is also possible to edit langid.py directly to embed the new model string.
+
 
 Read more
 ---------
