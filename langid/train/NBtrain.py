@@ -167,6 +167,7 @@ def generate_cm(items, num_classes):
 def learn_ptc(paths, tk_nextmove, state2feat, cm, temp_path, args):
   global b_dirs
   num_instances = len(paths)
+  num_features = max( i for v in state2feat.values() for i in v) + 1
 
   # Generate the feature map
   nm_arr = mp.Array('i', tk_nextmove, lock=False)
@@ -199,8 +200,8 @@ def learn_ptc(paths, tk_nextmove, state2feat, cm, temp_path, args):
   read_count = sum(reads)
   print "read a total of %d keys (%d short)" % (read_count, write_count - read_count)
 
-  prod = np.vstack(prods)[np.argsort(np.concatenate(ids))]
-  num_features = prod.shape[0]
+  prod = np.zeros((num_features, cm.shape[1]), dtype=int)
+  prod[np.concatenate(ids)] = np.vstack(prods)
   ptc = np.log(1 + prod) - np.log(num_features + prod.sum(0))
 
   nb_ptc = array.array('d')
