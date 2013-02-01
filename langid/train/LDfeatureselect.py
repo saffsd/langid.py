@@ -73,13 +73,15 @@ def select_LD_features(ig_lang, ig_domain, feats_per_lang):
     
 if __name__ == "__main__":
   parser = argparse.ArgumentParser()
+  parser.add_argument("-o","--output", metavar="OUTPUT_PATH", help = "write selected features to OUTPUT_PATH")
   parser.add_argument("--feats_per_lang", type=int, metavar='N', help="select top N features for each language", default=FEATURES_PER_LANG)
+  parser.add_argument("--per_lang", action="store_true", default=False, help="produce a list of features selecter per-language")
   parser.add_argument("model", metavar='MODEL_DIR', help="read index and produce output in MODEL_DIR")
   args = parser.parse_args()
 
   lang_w_path = os.path.join(args.model, 'IGweights.lang.bin')
   domain_w_path = os.path.join(args.model, 'IGweights.domain')
-  feature_path = os.path.join(args.model, 'LDfeats')
+  feature_path = args.output if args.output else os.path.join(args.model, 'LDfeats')
 
   # display paths
   print "model path:", args.model
@@ -91,10 +93,11 @@ if __name__ == "__main__":
   domain_w = read_weights(domain_w_path)
 
   features_per_lang = select_LD_features(lang_w, domain_w, args.feats_per_lang)
-  with open(feature_path + '.perlang', 'w') as f:
-    writer = csv.writer(f)
-    for i in range(len(features_per_lang)):
-      writer.writerow(map(repr,features_per_lang[i]))
+  if args.per_lang:
+    with open(feature_path + '.perlang', 'w') as f:
+      writer = csv.writer(f)
+      for i in range(len(features_per_lang)):
+        writer.writerow(map(repr,features_per_lang[i]))
       
 
   final_feature_set = reduce(set.union, map(set, features_per_lang.values()))
