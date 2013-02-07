@@ -132,7 +132,7 @@ def pass_tokenize(chunk_items):
 
   return len(term_lng_freq)
 
-def build_index(items, outdir, buckets=NUM_BUCKETS, jobs=None, chunksize=CHUNKSIZE, max_order=MAX_NGRAM_ORDER ):
+def build_index(items, tokenizer, outdir, buckets=NUM_BUCKETS, jobs=None, chunksize=CHUNKSIZE):
   """
   @param items a list of (language, path) pairs
   """
@@ -152,7 +152,6 @@ def build_index(items, outdir, buckets=NUM_BUCKETS, jobs=None, chunksize=CHUNKSI
   # will have 2 chunks
   chunk_size = max(1,min(len(items) / (jobs * 2), chunksize))
   item_chunks = list(chunk(items, chunk_size))
-  tokenizer = Tokenizer(1,max_order)
   pass_tokenize_globals = (tokenizer, b_dirs)
 
   with MapPool(jobs, setup_pass_tokenize, pass_tokenize_globals) as f:
@@ -174,8 +173,9 @@ def build_index(items, outdir, buckets=NUM_BUCKETS, jobs=None, chunksize=CHUNKSI
 if __name__ == "__main__":
   parser = argparse.ArgumentParser()
   parser.add_argument("-j","--jobs", type=int, metavar='N', help="spawn N processes (set to 1 for no paralleization)")
+  parser.add_argument("-s", "--scanner", metavar='SCANNER', help="use SCANNER for tokenizing")
   parser.add_argument("--buckets", type=int, metavar='N', help="distribute features into N buckets", default=NUM_BUCKETS)
-  parser.add_argument("--max_order", type=int, help="highest n-gram order to use", default=MAX_NGRAM_ORDER)
+  parser.add_argument("--max_order", type=int, help="highest n-gram order to use")
   parser.add_argument("--chunksize", type=int, help="max chunk size (number of files to tokenize at a time - smaller should reduce memory use)", default=CHUNKSIZE)
   parser.add_argument("-t", "--temp", metavar='TEMP_DIR', help="store buckets in TEMP_DIR instead of in MODEL_DIR/buckets")
   parser.add_argument("model", metavar='MODEL_DIR', help="read index and produce output in MODEL_DIR")
@@ -201,9 +201,27 @@ if __name__ == "__main__":
     reader = csv.reader(f)
     items = list(reader)
 
+  if args.scanner and args.max_order:
+    parser.error('--scanner and --max_order are mutually exclusive')
+
   # Tokenize
   print "will tokenize %d files" % len(items)
-  b_dirs = build_index(items, buckets_dir, args.buckets, args.jobs, args.chunksize, max_order=args.max_order)
+  if args.scanner:
+    from scanner import Scanner
+    import cPickle
+    with open(args.scanner) as f:
+      tk_nextmove, tk_output, feats = cPickle.load(f)
+    # tk_output is a mapping from state to a list of feature indices.
+    # because of the way the scanner class is written, it needs a mapping
+    # from state to the feature itself. We rebuild this here.
+    tk_output_f = dict( (k,[feats[i] for i in v]) for k,v in tk_output.iteritems() )
+    scanner = Scanner.__new__(Scanner)
+    scanner.__setstate__((tk_nextmove, tk_output_f))
+    tokenizer = scanner
+  else:
+    max_order = args.max_order if args.max_order else MAX_NGRAM_ORDER
+    tokenizer = Tokenizer(1,max_order)
+  b_dirs = build_index(items, tokenizer, buckets_dir, args.buckets, args.jobs, args.chunksize)
 
   # output the paths to the buckets
   with open(bucketlist_path,'w') as f:
