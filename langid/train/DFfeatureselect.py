@@ -38,7 +38,7 @@ or implied, of the copyright holder.
 # Can be overriden with command-line options
 ######
 MAX_NGRAM_ORDER = 4 # largest order of n-grams to consider
-TOP_DOC_FREQ = 15000 # number of tokens to consider for each order
+TOKENS_PER_ORDER = 15000 # number of tokens to consider for each order
 
 import os, sys, argparse
 import collections
@@ -56,7 +56,7 @@ from collections import defaultdict
 from datetime import datetime
 from contextlib import closing
 
-from common import Enumerator, unmarshal_iter, MapPool, write_features
+from common import Enumerator, unmarshal_iter, MapPool, write_features, write_weights
 
 def pass_sum_df(bucket):
   """
@@ -77,13 +77,12 @@ def pass_sum_df(bucket):
       docfreq.write(marshal.dumps(item))
   return count
 
-def ngram(bucketlist, jobs=None, max_order=MAX_NGRAM_ORDER, df_tokens=TOP_DOC_FREQ):
+def tally(bucketlist, jobs=None):
   """
-  DF feature selection for byte-ngram tokenization
+  Sum up the counts for each feature across all buckets. This
+  builds a full mapping of feature->count. This is stored in-memory
+  and thus could be an issue for large feature sets.
   """
-
-  if jobs is None:
-    jobs = mp.cpu_count() + 4
 
   with MapPool(jobs) as f:
     pass_sum_df_out = f(pass_sum_df, bucketlist)
@@ -97,15 +96,20 @@ def ngram(bucketlist, jobs=None, max_order=MAX_NGRAM_ORDER, df_tokens=TOP_DOC_FR
     for key, value in unmarshal_iter(os.path.join(bucket, 'docfreq')):
       doc_count[key] = value
 
-  print "unique features:", len(doc_count)
+  return doc_count
 
+
+
+def ngram_select(doc_count, max_order=MAX_NGRAM_ORDER, tokens_per_order=TOKENS_PER_ORDER):
+  """
+  DF feature selection for byte-ngram tokenization
+  """
   # Work out the set of features to compute IG
   features = set()
   for i in range(1, max_order+1):
     d = dict( (k, doc_count[k]) for k in doc_count if len(k) == i)
-    features |= set(sorted(d, key=d.get, reverse=True)[:df_tokens])
+    features |= set(sorted(d, key=d.get, reverse=True)[:tokens_per_order])
   features = sorted(features)
-  print "candidate features: ", len(features)
   
   return features
 
@@ -115,12 +119,20 @@ if __name__ == "__main__":
   parser = argparse.ArgumentParser()
   parser.add_argument("-j","--jobs", type=int, metavar='N', help="spawn N processes (set to 1 for no paralleization)")
   parser.add_argument("-f","--features", metavar='FEATURE_FILE', help="output features to FEATURE_FILE")
-  parser.add_argument("--df_tokens", type=int, help="number of tokens to consider for each n-gram order", default=TOP_DOC_FREQ)
+  parser.add_argument("--tokens_per_order", metavar='N', type=int, help="consider top N tokens per ngram order")
+  parser.add_argument("--tokens", metavar='N', type=int, help="consider top N tokens")
   parser.add_argument("--max_order", type=int, help="highest n-gram order to use", default=MAX_NGRAM_ORDER)
+  parser.add_argument("--doc_count", metavar='DOC_COUNT_PATH', help="output full mapping of feature->frequency to DOC_COUNT_PATH")
   parser.add_argument("model", metavar='MODEL_DIR', help="read index and produce output in MODEL_DIR")
   
   args = parser.parse_args()
 
+  if args.tokens and args.tokens_per_order:
+    parser.error("--tokens and --tokens_per_order are mutually exclusive")
+
+  # if neither --tokens nor --tokens_per_order is given, default behaviour is tokens_per_order
+  if not(args.tokens) and not(args.tokens_per_order):
+    args.tokens_per_order = TOKENS_PER_ORDER
   
   if args.features:
     feature_path = args.features
@@ -132,13 +144,28 @@ if __name__ == "__main__":
   # display paths
   print "buckets path:", bucketlist_path
   print "features output path:", feature_path
-  print "max ngram order:", args.max_order
-  print "tokens per order:", args.df_tokens
+  if args.tokens_per_order:
+    print "max ngram order:", args.max_order
+    print "tokens per order:", args.tokens_per_order
+  else:
+    print "tokens:", args.tokens
 
   with open(bucketlist_path) as f:
     bucketlist = map(str.strip, f)
 
-  feats = ngram(bucketlist, args.jobs, args.max_order, args.df_tokens)
+  doc_count = tally(bucketlist, args.jobs)
+  print "unique features:", len(doc_count)
+  if args.doc_count:
+    write_weights(args.doc_count, doc_count)
+    print "wrote DF counts for all features to:", args.doc_count
+
+  if args.tokens_per_order:
+    # Choose a number of features for each length of token
+    feats = ngram_select(doc_count, args.max_order, args.tokens_per_order)
+  else:
+    # Choose a number of features overall
+    feats = sorted( sorted(doc_count, key=doc_count.get, reverse=True)[:args.tokens] )
+  print "selected features: ", len(feats)
 
   write_features(feats, feature_path)
   print 'wrote features to "%s"' % feature_path 
