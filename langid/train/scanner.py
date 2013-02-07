@@ -172,14 +172,9 @@ def build_scanner(features):
   # tk_output is the output function of the scanner. It should generate indices into
   # the feature space directly, as this saves a lookup
   tk_output = {}
-  for key in raw_output:
-    tk_output[key] = tuple(feat_index[v] for v in raw_output[key])
-  
-  # Map the scanner raw output directly into feature indexes
-  state2feat = {}
   for k,v in raw_output.items():
-    state2feat[k] = tuple(feat_index[f] for f in v)
-  return tk_nextmove, tk_output, state2feat
+    tk_output[k] = tuple(feat_index[f] for f in v)
+  return tk_nextmove, tk_output
 
 
 def index(seq):
@@ -212,7 +207,8 @@ if __name__ == "__main__":
   print "output path:", output_path
 
   nb_features = read_features(input_path)
-  scanner = build_scanner(nb_features)
+  tk_nextmove, tk_output = build_scanner(nb_features)
+  scanner = tk_nextmove, tk_output, nb_features
 
   with open(output_path, 'w') as f:
     cPickle.dump(scanner, f)

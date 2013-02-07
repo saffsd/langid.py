@@ -70,14 +70,14 @@ def state_trace(path):
       c[state] += 1
   return c
 
-def setup_pass_tokenize(nm_arr, output_states, state2feat, b_dirs):
+def setup_pass_tokenize(nm_arr, output_states, tk_output, b_dirs):
   """
   Set the global next-move array used by the aho-corasick scanner
   """
-  global __nm_arr, __output_states, __state2feat, __b_dirs
+  global __nm_arr, __output_states, __tk_output, __b_dirs
   __nm_arr = nm_arr
   __output_states = output_states
-  __state2feat = state2feat
+  __tk_output = tk_output
   __b_dirs = b_dirs
 
 def pass_tokenize(arg):
@@ -85,7 +85,7 @@ def pass_tokenize(arg):
   Tokenize documents and do counts for each feature
   Split this into buckets chunked over features rather than documents
   """
-  global __output_states, __state2feat, __b_dirs
+  global __output_states, __tk_output, __b_dirs
   chunk_offset, chunk_paths = arg
   term_freq = defaultdict(int)
   __procname = mp.current_process().name
@@ -96,7 +96,7 @@ def pass_tokenize(arg):
     doc_id = doc_count + chunk_offset
     count = state_trace(path)
     for state in (set(count) & __output_states):
-      for f_id in __state2feat[state]:
+      for f_id in __tk_output[state]:
         term_freq[doc_id, f_id] += count[state]
 
   # Distribute the aggregated counts into buckets
@@ -164,10 +164,10 @@ def generate_cm(items, num_classes):
 
   return cm
 
-def learn_ptc(paths, tk_nextmove, state2feat, cm, temp_path, args):
+def learn_ptc(paths, tk_nextmove, tk_output, cm, temp_path, args):
   global b_dirs
   num_instances = len(paths)
-  num_features = max( i for v in state2feat.values() for i in v) + 1
+  num_features = max( i for v in tk_output.values() for i in v) + 1
 
   # Generate the feature map
   nm_arr = mp.Array('i', tk_nextmove, lock=False)
@@ -180,12 +180,12 @@ def learn_ptc(paths, tk_nextmove, state2feat, cm, temp_path, args):
   # TODO: Set the output dir
   b_dirs = [ tempfile.mkdtemp(prefix="train-",suffix='-bucket', dir=temp_path) for i in range(args.buckets) ]
 
-  output_states = set(state2feat)
+  output_states = set(tk_output)
   
   path_chunks = list(chunk(paths, chunk_size))
   pass_tokenize_arg = zip(offsets(path_chunks), path_chunks)
   
-  pass_tokenize_params = (nm_arr, output_states, state2feat, b_dirs) 
+  pass_tokenize_params = (nm_arr, output_states, tk_output, b_dirs) 
   with MapPool(args.jobs, setup_pass_tokenize, pass_tokenize_params) as f:
     pass_tokenize_out = f(pass_tokenize, pass_tokenize_arg)
 
@@ -263,7 +263,7 @@ if __name__ == "__main__":
 
   # read scanner
   with open(scanner_path) as f:
-    tk_nextmove, tk_output, state2feat = cPickle.load(f)
+    tk_nextmove, tk_output, _ = cPickle.load(f)
 
   # read list of languages in order
   with open(lang_path) as f:
@@ -275,7 +275,7 @@ if __name__ == "__main__":
 
   nb_classes = langs
   nb_pc = learn_pc(cm)
-  nb_ptc = learn_ptc(paths, tk_nextmove, state2feat, cm, temp_path, args)
+  nb_ptc = learn_ptc(paths, tk_nextmove, tk_output, cm, temp_path, args)
 
   # output the model
   model = nb_ptc, nb_pc, nb_classes, tk_nextmove, tk_output
