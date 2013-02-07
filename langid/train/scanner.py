@@ -144,10 +144,9 @@ class Scanner(object):
       self.nextmove[(state, letter)] = next_state 
 
   def search(self, string):
-    # TODO: update to using nm_arr
     state = 0
-    for letter in string:
-      state = self.nextmove[(state, letter)]
+    for letter in map(ord,string):
+      state = self.nm_arr[(state << 8) + letter]
       for key in self.output.get(state, []):
         yield key
 
