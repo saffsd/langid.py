@@ -139,11 +139,17 @@ class Scanner(object):
     # Next move encoded as a single array. The index of the next state
     # is located at current state * alphabet size  + ord(c).
     # The choice of 'H' array typecode limits us to 64k states.
-    def nextstate_iter():
-      for state in xrange(len(set(self.nextmove.values()))):
-        for letter in self.alphabet:
-          yield self.nextmove[(state, letter)]
-    self.nm_arr = array.array('H', nextstate_iter())
+    def generate_nm_arr(typecode):
+      def nextstate_iter():
+        for state in xrange(len(set(self.nextmove.values()))):
+          for letter in self.alphabet:
+            yield self.nextmove[(state, letter)]
+      return array.array(typecode, nextstate_iter())
+    try:
+      self.nm_arr = generate_nm_arr('H')
+    except OverflowError:
+      # Could not fit in an unsigned short array, let's try an unsigned long array.
+      self.nm_arr = generate_nm_arr('L')
 
   def __getstate__(self):
     """
