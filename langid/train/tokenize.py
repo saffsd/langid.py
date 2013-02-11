@@ -208,16 +208,8 @@ if __name__ == "__main__":
   print "will tokenize %d files" % len(items)
   if args.scanner:
     from scanner import Scanner
-    import cPickle
-    with open(args.scanner) as f:
-      tk_nextmove, tk_output, feats = cPickle.load(f)
-    # tk_output is a mapping from state to a list of feature indices.
-    # because of the way the scanner class is written, it needs a mapping
-    # from state to the feature itself. We rebuild this here.
-    tk_output_f = dict( (k,[feats[i] for i in v]) for k,v in tk_output.iteritems() )
-    scanner = Scanner.__new__(Scanner)
-    scanner.__setstate__((tk_nextmove, tk_output_f))
-    tokenizer = scanner
+    tokenizer = Scanner.from_file(args.scanner)
+    print "using provided scanner: ", args.scanner
   else:
     max_order = args.max_order if args.max_order else MAX_NGRAM_ORDER
     tokenizer = NGramTokenizer(1,max_order)
