@@ -173,16 +173,16 @@ def learn_ptc(paths, tk_nextmove, tk_output, cm, temp_path, args):
   nm_arr = mp.Array('i', tk_nextmove, lock=False)
 
   if args.jobs:
-    chunk_size = min(len(paths) / (args.jobs*2), args.chunk_size)
+    chunksize = min(len(paths) / (args.jobs*2), args.chunksize)
   else:
-    chunk_size = min(len(paths) / (mp.cpu_count()*2), args.chunk_size)
+    chunksize = min(len(paths) / (mp.cpu_count()*2), args.chunksize)
 
   # TODO: Set the output dir
   b_dirs = [ tempfile.mkdtemp(prefix="train-",suffix='-bucket', dir=temp_path) for i in range(args.buckets) ]
 
   output_states = set(tk_output)
   
-  path_chunks = list(chunk(paths, chunk_size))
+  path_chunks = list(chunk(paths, chunksize))
   pass_tokenize_arg = zip(offsets(path_chunks), path_chunks)
   
   pass_tokenize_params = (nm_arr, output_states, tk_output, b_dirs) 
@@ -227,7 +227,7 @@ if __name__ == "__main__":
   parser.add_argument("-o", "--output", metavar='OUTPUT', help="output langid.py-compatible model to OUTPUT")
   #parser.add_argument("-i","--index",metavar='INDEX',help="read list of training document paths from INDEX")
   parser.add_argument("model", metavar='MODEL_DIR', help="read index and produce output in MODEL_DIR")
-  parser.add_argument("--chunk_size", type=int, help='maximum chunk size (number of files)', default=MAX_CHUNK_SIZE)
+  parser.add_argument("--chunksize", type=int, help='maximum chunk size (number of files)', default=MAX_CHUNK_SIZE)
   parser.add_argument("--buckets", type=int, metavar='N', help="distribute features into N buckets", default=NUM_BUCKETS)
   args = parser.parse_args()
 
