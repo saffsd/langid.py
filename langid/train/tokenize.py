@@ -55,7 +55,7 @@ from collections import defaultdict
 
 from common import makedir, chunk, MapPool
 
-class Tokenizer(object):
+class NGramTokenizer(object):
   def __init__(self, min_order=1, max_order=3):
     self.min_order = min_order
     self.max_order = max_order
@@ -220,7 +220,8 @@ if __name__ == "__main__":
     tokenizer = scanner
   else:
     max_order = args.max_order if args.max_order else MAX_NGRAM_ORDER
-    tokenizer = Tokenizer(1,max_order)
+    tokenizer = NGramTokenizer(1,max_order)
+    print "using n-gram tokenizer: max_order({0})".format(max_order)
   b_dirs = build_index(items, tokenizer, buckets_dir, args.buckets, args.jobs, args.chunksize)
 
   # output the paths to the buckets
