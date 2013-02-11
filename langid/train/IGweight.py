@@ -235,4 +235,4 @@ if __name__ == "__main__":
   dist = read_dist(index_path)
   ig = compute_IG(bucketlist, features, dist, args.binarize, suffix, args.jobs)
 
-  write_weights(weights_path, ig)
+  write_weights(ig, weights_path)

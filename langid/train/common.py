@@ -50,7 +50,7 @@ def makedir(path):
       raise
 
 import csv
-def write_weights(path, weights):
+def write_weights(weights, path):
   w = dict(weights)
   with open(path, 'w') as f:
     writer = csv.writer(f)

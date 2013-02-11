@@ -156,7 +156,7 @@ if __name__ == "__main__":
   doc_count = tally(bucketlist, args.jobs)
   print "unique features:", len(doc_count)
   if args.doc_count:
-    write_weights(args.doc_count, doc_count)
+    write_weights(doc_count, args.doc_count)
     print "wrote DF counts for all features to:", args.doc_count
 
   if args.tokens_per_order:
