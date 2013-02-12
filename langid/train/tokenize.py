@@ -176,6 +176,7 @@ if __name__ == "__main__":
   parser.add_argument("-s", "--scanner", metavar='SCANNER', help="use SCANNER for tokenizing")
   parser.add_argument("--buckets", type=int, metavar='N', help="distribute features into N buckets", default=NUM_BUCKETS)
   parser.add_argument("--max_order", type=int, help="highest n-gram order to use")
+  parser.add_argument("--word", action='store_true', default=False, help="use 'word' tokenization (currently str.split)")
   parser.add_argument("--chunksize", type=int, help="max chunk size (number of files to tokenize at a time - smaller should reduce memory use)", default=CHUNKSIZE)
   parser.add_argument("-t", "--temp", metavar='TEMP_DIR', help="store buckets in TEMP_DIR instead of in MODEL_DIR/buckets")
   parser.add_argument("model", metavar='MODEL_DIR', help="read index and produce output in MODEL_DIR")
@@ -201,8 +202,8 @@ if __name__ == "__main__":
     reader = csv.reader(f)
     items = list(reader)
 
-  if args.scanner and args.max_order:
-    parser.error('--scanner and --max_order are mutually exclusive')
+  if sum(map(bool,(args.scanner, args.max_order, args.word))) > 1:
+    parser.error('can only specify one of --word, --scanner and --max_order')
 
   # Tokenize
   print "will tokenize %d files" % len(items)
@@ -210,6 +211,9 @@ if __name__ == "__main__":
     from scanner import Scanner
     tokenizer = Scanner.from_file(args.scanner)
     print "using provided scanner: ", args.scanner
+  elif args.word:
+    tokenizer = str.split
+    print "using str.split to tokenize"
   else:
     max_order = args.max_order if args.max_order else MAX_NGRAM_ORDER
     tokenizer = NGramTokenizer(1,max_order)
