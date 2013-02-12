@@ -122,7 +122,7 @@ if __name__ == "__main__":
   parser.add_argument("--tokens_per_order", metavar='N', type=int, help="consider top N tokens per ngram order")
   parser.add_argument("--tokens", metavar='N', type=int, help="consider top N tokens")
   parser.add_argument("--max_order", type=int, help="highest n-gram order to use", default=MAX_NGRAM_ORDER)
-  parser.add_argument("--doc_count", metavar='DOC_COUNT_PATH', help="output full mapping of feature->frequency to DOC_COUNT_PATH")
+  parser.add_argument("--doc_count", nargs='?', const=True, metavar='DOC_COUNT_PATH', help="output full mapping of feature->frequency to DOC_COUNT_PATH")
   parser.add_argument("model", metavar='MODEL_DIR', help="read index and produce output in MODEL_DIR")
   
   args = parser.parse_args()
@@ -156,8 +156,10 @@ if __name__ == "__main__":
   doc_count = tally(bucketlist, args.jobs)
   print "unique features:", len(doc_count)
   if args.doc_count:
-    write_weights(doc_count, args.doc_count)
-    print "wrote DF counts for all features to:", args.doc_count
+    # The constant true is used to indicate output to default location
+    doc_count_path = os.path.join(args.model, 'DF_all') if args.doc_count == True else args.doc_count
+    write_weights(doc_count, doc_count_path)
+    print "wrote DF counts for all features to:", doc_count_path
 
   if args.tokens_per_order:
     # Choose a number of features for each length of token
