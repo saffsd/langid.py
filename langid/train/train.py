@@ -68,11 +68,15 @@ if __name__ == "__main__":
   parser.add_argument("--chunksize", type=int, help="max chunk size (number of files to tokenize at a time - smaller should reduce memory use)", default=CHUNKSIZE)
   parser.add_argument("--df_tokens", type=int, help="number of tokens to consider for each n-gram order", default=TOP_DOC_FREQ)
   parser.add_argument("--df_feats", metavar="FEATS", help="Instead of DF feature selection, use a list of features from FEATS")
+  parser.add_argument("--ld_feats", metavar="FEATS", help="Instead of LD feature selection, use a list of features from FEATS")
   parser.add_argument("--feats_per_lang", type=int, metavar='N', help="select top N features for each language", default=FEATURES_PER_LANG)
   parser.add_argument("--debug", action="store_true", default=False, help="produce debug output (all intermediates)")
   parser.add_argument("corpus", help="read corpus from CORPUS_DIR", metavar="CORPUS_DIR")
 
   args = parser.parse_args()
+
+  if args.df_feats and args.ld_feats:
+    parser.error("--df_feats and --ld_feats are mutually exclusive")
 
   corpus_name = os.path.basename(args.corpus)
   if args.model:
@@ -133,83 +137,90 @@ if __name__ == "__main__":
   bucketlist_path = os.path.join(model_dir, 'bucketlist')
   index_path = os.path.join(model_dir, 'paths')
 
-  # Tokenize
-  DFfeats = None
-  print "will tokenize %d files" % len(items)
-  # TODO: Custom tokenizer if doing custom first-pass features
-  if args.df_feats:
-    from scanner import Scanner
-    print "reading custom features from:", args.df_feats
-    DFfeats = read_features(args.df_feats)
-    print "building tokenizer for custom list of {0} features".format(len(DFfeats))
-    tk = Scanner(DFfeats)
-  elif args.max_order:
-    print "using byte NGram tokenizer, max_order: {0}".format(args.max_order)
-    tk = NGramTokenizer(1, args.max_order)
+  if args.ld_feats:
+    # LD features are pre-specified. We are basically just building the NB model.
+    LDfeats = read_features(args.ld_feats)
 
-  b_dirs = build_index(items, tk, buckets_dir, args.buckets, args.jobs, args.chunksize)
+  else:
+    # LD features not pre-specified, so we compute them.
 
-  if args.debug:
-    # output the paths to the buckets
-    with open(bucketlist_path,'w') as f:
-      for d in b_dirs:
-        f.write(d+'\n')
+    # Tokenize
+    DFfeats = None
+    print "will tokenize %d files" % len(items)
+    # TODO: Custom tokenizer if doing custom first-pass features
+    if args.df_feats:
+      from scanner import Scanner
+      print "reading custom features from:", args.df_feats
+      DFfeats = read_features(args.df_feats)
+      print "building tokenizer for custom list of {0} features".format(len(DFfeats))
+      tk = Scanner(DFfeats)
+    elif args.max_order:
+      print "using byte NGram tokenizer, max_order: {0}".format(args.max_order)
+      tk = NGramTokenizer(1, args.max_order)
 
-  # We need to compute a tally if we are selecting features by DF, but also if
-  # we want full debug output.
-  if DFfeats is None or args.debug:
-    # Compute DF per-feature
-    doc_count = tally(b_dirs, args.jobs)
+    b_dirs = build_index(items, tk, buckets_dir, args.buckets, args.jobs, args.chunksize)
+
     if args.debug:
-      doc_count_path = os.path.join(model_dir, 'DF_all')
-      write_weights(doc_count, doc_count_path)
-      print "wrote DF counts for all features to:", doc_count_path
+      # output the paths to the buckets
+      with open(bucketlist_path,'w') as f:
+        for d in b_dirs:
+          f.write(d+'\n')
 
-  if DFfeats is None:
-    # Choose the first-stage features
-    DFfeats = ngram_select(doc_count, args.max_order, args.df_tokens)
+    # We need to compute a tally if we are selecting features by DF, but also if
+    # we want full debug output.
+    if DFfeats is None or args.debug:
+      # Compute DF per-feature
+      doc_count = tally(b_dirs, args.jobs)
+      if args.debug:
+        doc_count_path = os.path.join(model_dir, 'DF_all')
+        write_weights(doc_count, doc_count_path)
+        print "wrote DF counts for all features to:", doc_count_path
 
-  if args.debug:
-    feature_path = os.path.join(model_dir, 'DFfeats')
-    write_features(DFfeats, feature_path)
-    print 'wrote features to "%s"' % feature_path 
+    if DFfeats is None:
+      # Choose the first-stage features
+      DFfeats = ngram_select(doc_count, args.max_order, args.df_tokens)
 
-  # Build vectors of domain and language distributions for use in IG calculation
-  domain_dist_vec = numpy.array([ domain_dist[domain_index[d]]
-          for d in sorted(domain_index, key=domain_index.get)], dtype=int)
-  lang_dist_vec = numpy.array([ lang_dist[lang_index[l]]
-          for l in sorted(lang_index.keys(), key=lang_index.get)], dtype=int)
-
-  # Compute IG
-  ig_params = [
-    ('domain', domain_dist_vec, '.domain', False),
-    ('lang', lang_dist_vec, '.lang', True),
-  ]
-
-  ig_vals = {}
-  for label, dist, suffix, binarize in ig_params:
-    print "Computing information gain for {0}".format(label)
-    ig = compute_IG(b_dirs, DFfeats, dist, binarize, suffix, args.jobs)
     if args.debug:
-      weights_path = os.path.join(model_dir, 'IGweights' + suffix + ('.bin' if binarize else ''))
-      write_weights(ig, weights_path)
-    ig_vals[label] = dict((row[0], numpy.array(row[1].flat)) for row in ig)
+      feature_path = os.path.join(model_dir, 'DFfeats')
+      write_features(DFfeats, feature_path)
+      print 'wrote features to "%s"' % feature_path 
 
-  # Select features according to the LD criteria
-  features_per_lang = select_LD_features(ig_vals['lang'], ig_vals['domain'], args.feats_per_lang)
-  LDfeats = reduce(set.union, map(set, features_per_lang.values()))
-  print 'selected %d features' % len(LDfeats)
+    # Build vectors of domain and language distributions for use in IG calculation
+    domain_dist_vec = numpy.array([ domain_dist[domain_index[d]]
+            for d in sorted(domain_index, key=domain_index.get)], dtype=int)
+    lang_dist_vec = numpy.array([ lang_dist[lang_index[l]]
+            for l in sorted(lang_index.keys(), key=lang_index.get)], dtype=int)
 
-  if args.debug:
-    feature_path = os.path.join(model_dir, 'LDfeats')
-    write_features(sorted(LDfeats), feature_path)
-    print 'wrote LD features to "%s"' % feature_path 
+    # Compute IG
+    ig_params = [
+      ('domain', domain_dist_vec, '.domain', False),
+      ('lang', lang_dist_vec, '.lang', True),
+    ]
 
-    with open(feature_path + '.perlang', 'w') as f:
-      writer = csv.writer(f)
-      for i in range(len(features_per_lang)):
-        writer.writerow(map(repr,features_per_lang[i]))
-    print 'wrote LD.perlang features to "%s"' % feature_path + '.perlang'
+    ig_vals = {}
+    for label, dist, suffix, binarize in ig_params:
+      print "Computing information gain for {0}".format(label)
+      ig = compute_IG(b_dirs, DFfeats, dist, binarize, suffix, args.jobs)
+      if args.debug:
+        weights_path = os.path.join(model_dir, 'IGweights' + suffix + ('.bin' if binarize else ''))
+        write_weights(ig, weights_path)
+      ig_vals[label] = dict((row[0], numpy.array(row[1].flat)) for row in ig)
+
+    # Select features according to the LD criteria
+    features_per_lang = select_LD_features(ig_vals['lang'], ig_vals['domain'], args.feats_per_lang)
+    LDfeats = reduce(set.union, map(set, features_per_lang.values()))
+    print 'selected %d features' % len(LDfeats)
+
+    if args.debug:
+      feature_path = os.path.join(model_dir, 'LDfeats')
+      write_features(sorted(LDfeats), feature_path)
+      print 'wrote LD features to "%s"' % feature_path 
+
+      with open(feature_path + '.perlang', 'w') as f:
+        writer = csv.writer(f)
+        for i in range(len(features_per_lang)):
+          writer.writerow(map(repr,features_per_lang[i]))
+      print 'wrote LD.perlang features to "%s"' % feature_path + '.perlang'
 
   # Compile a scanner for the LDfeats
   tk_nextmove, tk_output = build_scanner(LDfeats)
