@@ -141,7 +141,9 @@ class Scanner(object):
     # The choice of 'H' array typecode limits us to 64k states.
     def generate_nm_arr(typecode):
       def nextstate_iter():
-        for state in xrange(len(set(self.nextmove.values()))):
+        # State count starts at 0, so the number of states is the number of i
+        # the last state (newstate) + 1
+        for state in xrange(newstate+1):
           for letter in self.alphabet:
             yield self.nextmove[(state, letter)]
       return array.array(typecode, nextstate_iter())
