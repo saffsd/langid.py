@@ -74,13 +74,23 @@ class CorpusIndexer(object):
   """
   Class to index the contents of a corpus
   """
-  def __init__(self, root, min_domain=MIN_DOMAIN, proportion=TRAIN_PROP):
+  def __init__(self, root, min_domain=MIN_DOMAIN, proportion=TRAIN_PROP, langs=None, domains=None):
     self.root = root
     self.min_domain = min_domain
     self.proportion = proportion 
 
-    self.lang_index = defaultdict(Enumerator())
-    self.domain_index = defaultdict(Enumerator())
+    if langs is None:
+      self.lang_index = defaultdict(Enumerator())
+    else:
+      # pre-specified lang set
+      self.lang_index = dict((k,v) for v,k in enumerate(langs))
+
+    if domains is None:
+      self.domain_index = defaultdict(Enumerator())
+    else:
+      # pre-specified domain set
+      self.domain_index = dict((k,v) for v,k in enumerate(domains))
+
     self.coverage_index = defaultdict(set)
     self.items = list()
 
@@ -101,8 +111,13 @@ class CorpusIndexer(object):
           d, domain = os.path.split(d)
 
           # index the language and the domain
-          lang_id = self.lang_index[lang]
-          domain_id = self.domain_index[domain]
+          try:
+            lang_id = self.lang_index[lang]
+            domain_id = self.domain_index[domain]
+          except KeyError:
+            # lang or domain outside a pre-specified set so
+            # skip this document.
+            continue
 
           # add the domain-lang relation to the coverage index
           self.coverage_index[domain].add(lang)
@@ -181,9 +196,15 @@ class CorpusIndexer(object):
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser()
-  parser.add_argument("-p","--proportion", type=float, help="proportion of training data to use", default=TRAIN_PROP)
+  parser.add_argument("-p","--proportion", type=float, default=TRAIN_PROP,
+      help="proportion of training data to use" )
   parser.add_argument("-m","--model", help="save output to MODEL_DIR", metavar="MODEL_DIR")
-  parser.add_argument("--min_domain", type=int, help="minimum number of domains a language must be present in", default=MIN_DOMAIN)
+  parser.add_argument("-d","--domain", metavar="DOMAIN", action='append',
+      help="use DOMAIN - can be specified multiple times (uses all domains found if not specified)")
+  parser.add_argument("-l","--lang", metavar="LANG", action='append',
+      help="use LANG - can be specified multiple times (uses all langs found if not specified)")
+  parser.add_argument("--min_domain", type=int, default=MIN_DOMAIN,
+      help="minimum number of domains a language must be present in" )
   parser.add_argument("corpus", help="read corpus from CORPUS_DIR", metavar="CORPUS_DIR")
 
   args = parser.parse_args()
@@ -207,7 +228,8 @@ if __name__ == "__main__":
   print "writing domains to:", domains_path
   print "writing index to:", index_path
 
-  indexer = CorpusIndexer(args.corpus, args.min_domain, args.proportion)
+  indexer = CorpusIndexer(args.corpus, min_domain=args.min_domain, proportion=args.proportion,
+                          langs = args.lang, domains = args.domain)
 
   # Compute mappings between files, languages and domains
   lang_dist = indexer.dist_lang
