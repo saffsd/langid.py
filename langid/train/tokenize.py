@@ -144,7 +144,7 @@ def build_index(items, tokenizer, outdir, buckets=NUM_BUCKETS, jobs=None, chunks
   if jobs is None:
     jobs = mp.cpu_count() + 4
 
-  b_dirs = [ tempfile.mkdtemp(prefix="tokenize-",suffix='-bucket', dir=outdir) for i in range(buckets) ]
+  b_dirs = [ tempfile.mkdtemp(prefix="tokenize-",suffix='-{0}'.format(tokenizer.__class__.__name__), dir=outdir) for i in range(buckets) ]
 
   # PASS 1: Tokenize documents into sets of terms
    
