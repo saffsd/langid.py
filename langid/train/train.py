@@ -53,7 +53,7 @@ from tokenize import build_index, NGramTokenizer
 from DFfeatureselect import tally, ngram_select
 from IGweight import compute_IG
 from LDfeatureselect import select_LD_features
-from scanner import build_scanner
+from scanner import build_scanner, Scanner
 from NBtrain import generate_cm, learn_pc, learn_ptc
 
 if __name__ == "__main__":
@@ -157,7 +157,8 @@ if __name__ == "__main__":
     elif args.max_order:
       print "using byte NGram tokenizer, max_order: {0}".format(args.max_order)
       tk = NGramTokenizer(1, args.max_order)
-
+    
+    # First-pass tokenization, used to determine DF of features
     b_dirs = build_index(items, tk, buckets_dir, args.buckets, args.jobs, args.chunksize)
 
     if args.debug:
@@ -184,6 +185,19 @@ if __name__ == "__main__":
       feature_path = os.path.join(model_dir, 'DFfeats')
       write_features(DFfeats, feature_path)
       print 'wrote features to "%s"' % feature_path 
+
+    # Dispose of the first-pass tokenize output as it is no longer 
+    # needed.
+    if not args.debug:
+      for b in b_dirs:
+        shutil.rmtree(b)
+
+    # Second-pass tokenization to only obtain counts for the selected features.
+    # As the first-pass set is typically much larger than the second pass, it often 
+    # works out to be faster to retokenize the raw documents rather than iterate
+    # over the first-pass counts.
+    DF_scanner = Scanner(DFfeats)
+    b_dirs = build_index(items, DF_scanner, buckets_dir, args.buckets, args.jobs, args.chunksize)
 
     # Build vectors of domain and language distributions for use in IG calculation
     domain_dist_vec = numpy.array([ domain_dist[domain_index[d]]
@@ -248,8 +262,8 @@ if __name__ == "__main__":
     f.write(string)
   print "wrote model to %s (%d bytes)" % (output_path, len(string))
 
-  # remove buckets if debug is off
-  if not args.debug:
+  # remove buckets if debug is off. We don't generate buckets if ldfeats is supplied.
+  if not args.debug and not args.ld_feats:
     for b in b_dirs:
       shutil.rmtree(b)
     if not args.temp:
