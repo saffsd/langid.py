@@ -62,6 +62,10 @@ if __name__ == "__main__":
   parser.add_argument("-m","--model", help="save output to MODEL_DIR", metavar="MODEL_DIR")
   parser.add_argument("-j","--jobs", type=int, metavar='N', help="spawn N processes (set to 1 for no paralleization)")
   parser.add_argument("-t", "--temp", metavar='TEMP_DIR', help="store buckets in TEMP_DIR instead of in MODEL_DIR/buckets")
+  parser.add_argument("-d","--domain", metavar="DOMAIN", action='append',
+      help="use DOMAIN - can be specified multiple times (uses all domains found if not specified)")
+  parser.add_argument("-l","--lang", metavar="LANG", action='append',
+      help="use LANG - can be specified multiple times (uses all langs found if not specified)")
   parser.add_argument("--min_domain", type=int, help="minimum number of domains a language must be present in", default=MIN_DOMAIN)
   parser.add_argument("--buckets", type=int, metavar='N', help="distribute features into N buckets", default=NUM_BUCKETS)
   parser.add_argument("--max_order", type=int, help="highest n-gram order to use", default=MAX_NGRAM_ORDER)
@@ -94,7 +98,8 @@ if __name__ == "__main__":
   print "corpus path:", args.corpus
   print "model path:", model_dir
 
-  indexer = CorpusIndexer(args.corpus, args.min_domain, args.proportion)
+  indexer = CorpusIndexer(args.corpus, min_domain=args.min_domain, proportion=args.proportion,
+                          langs = args.lang, domains = args.domain)
 
   # Compute mappings between files, languages and domains
   lang_dist = indexer.dist_lang
