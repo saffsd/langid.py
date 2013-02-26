@@ -105,6 +105,11 @@ if __name__ == "__main__":
     for k in feats:
       records[k].update( dict(zip(r_h, w[k])) )
 
+  headers.append('feat')
+  for k in feats:
+    records[k]['feat'] = k
+
+
 
   print >>sys.stderr, "writing output"
   with open(args.output, 'w') as f:
