@@ -80,7 +80,7 @@ if __name__ == "__main__":
   if len(items) == 0:
     raise ValueError("found no files!")
 
-  print "will process {0} paths".format(len(items))
+  print "will process {0} features across {1} paths".format(len(feats), len(items))
 
   langs = [args.lang1, args.lang2]
   cm = generate_cm([ (l,p) for d,l,p in items], len(langs))
