@@ -154,7 +154,6 @@ if __name__ == "__main__":
     print "will tokenize %d files" % len(items)
     # TODO: Custom tokenizer if doing custom first-pass features
     if args.df_feats:
-      from scanner import Scanner
       print "reading custom features from:", args.df_feats
       DFfeats = read_features(args.df_feats)
       print "building tokenizer for custom list of {0} features".format(len(DFfeats))
