@@ -112,8 +112,10 @@ class CorpusIndexer(object):
 
           # index the language and the domain
           try:
-            lang_id = self.lang_index[lang]
+            # TODO: If lang is pre-specified but not domain, we can end up 
+            #       enumerating empty domains.
             domain_id = self.domain_index[domain]
+            lang_id = self.lang_index[lang]
           except KeyError:
             # lang or domain outside a pre-specified set so
             # skip this document.
