@@ -96,7 +96,8 @@ if __name__ == "__main__":
     nb_ptc = np.array(nb_ptc).reshape(len(nb_ptc)/len(nb_pc), len(nb_pc))
 
     # Normalize to 1 on the term axis
-    nb_ptc = (1/np.exp(nb_ptc[None,:] - nb_ptc[:,None]).sum(1))
+    for i in range(nb_ptc.shape[1]):
+      nb_ptc[:,i] = (1/np.exp(nb_ptc[:,i][None,:] - nb_ptc[:,i][:,None]).sum(1))
     w = dict(zip(nb_feats, nb_ptc))
 
     r_h = ['ptc.{0}'.format(l) for l in nb_classes]
