@@ -71,6 +71,7 @@ if __name__ == "__main__":
   parser.add_argument("--max_order", type=int, help="highest n-gram order to use", default=MAX_NGRAM_ORDER)
   parser.add_argument("--chunksize", type=int, help="max chunk size (number of files to tokenize at a time - smaller should reduce memory use)", default=CHUNKSIZE)
   parser.add_argument("--df_tokens", type=int, help="number of tokens to consider for each n-gram order", default=TOP_DOC_FREQ)
+  parser.add_argument("--word", action='store_true', default=False, help="use 'word' tokenization (currently str.split)")
   parser.add_argument("--df_feats", metavar="FEATS", help="Instead of DF feature selection, use a list of features from FEATS")
   parser.add_argument("--ld_feats", metavar="FEATS", help="Instead of LD feature selection, use a list of features from FEATS")
   parser.add_argument("--feats_per_lang", type=int, metavar='N', help="select top N features for each language", default=FEATURES_PER_LANG)
@@ -158,7 +159,10 @@ if __name__ == "__main__":
       DFfeats = read_features(args.df_feats)
       print "building tokenizer for custom list of {0} features".format(len(DFfeats))
       tk = Scanner(DFfeats)
-    elif args.max_order:
+    elif args.word:
+      print "using word tokenizer"
+      tk = str.split
+    else:
       print "using byte NGram tokenizer, max_order: {0}".format(args.max_order)
       tk = NGramTokenizer(1, args.max_order)
     
