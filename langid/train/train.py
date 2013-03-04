@@ -216,9 +216,10 @@ if __name__ == "__main__":
 
     # Compute IG
     ig_params = [
-      ('domain', domain_dist_vec, '.domain', False),
       ('lang', lang_dist_vec, '.lang', True),
     ]
+    if not args.no_domain_ig:
+      ig_params.append( ('domain', domain_dist_vec, '.domain', False) )
 
     ig_vals = {}
     for label, dist, suffix, binarize in ig_params:
