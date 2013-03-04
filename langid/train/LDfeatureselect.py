@@ -48,7 +48,10 @@ from collections import defaultdict
 
 from common import read_weights, Enumerator, write_features
 
-def select_LD_features(ig_lang, ig_domain, feats_per_lang):
+def select_LD_features(ig_lang, ig_domain, feats_per_lang, ignore_domain=False):
+  """
+  @param ignore_domain boolean to indicate whether to use domain weights
+  """
   assert len(ig_lang) == len(ig_domain)
   num_lang = len(ig_lang.values()[0])
   num_term = len(ig_lang)
@@ -60,7 +63,10 @@ def select_LD_features(ig_lang, ig_domain, feats_per_lang):
 
   for term in ig_lang:
     term_id = term_index[term]
-    ld[:, term_id] = ig_lang[term] - ig_domain[term]
+    if ignore_domain:
+      ld[:, term_id] = ig_lang[term]
+    else:
+      ld[:, term_id] = ig_lang[term] - ig_domain[term]
 
   terms = sorted(term_index, key=term_index.get)
   # compile the final feature set
@@ -76,6 +82,7 @@ if __name__ == "__main__":
   parser.add_argument("-o","--output", metavar="OUTPUT_PATH", help = "write selected features to OUTPUT_PATH")
   parser.add_argument("--feats_per_lang", type=int, metavar='N', help="select top N features for each language", default=FEATURES_PER_LANG)
   parser.add_argument("--per_lang", action="store_true", default=False, help="produce a list of features selecter per-language")
+  parser.add_argument("--no_domain_ig", action="store_true", default=False, help="use only per-langugage IG in LD calculation")
   parser.add_argument("model", metavar='MODEL_DIR', help="read index and produce output in MODEL_DIR")
   args = parser.parse_args()
 
@@ -92,7 +99,7 @@ if __name__ == "__main__":
   lang_w = read_weights(lang_w_path)
   domain_w = read_weights(domain_w_path)
 
-  features_per_lang = select_LD_features(lang_w, domain_w, args.feats_per_lang)
+  features_per_lang = select_LD_features(lang_w, domain_w, args.feats_per_lang, ignore_domain=args.no_domain_ig)
   if args.per_lang:
     with open(feature_path + '.perlang', 'w') as f:
       writer = csv.writer(f)
