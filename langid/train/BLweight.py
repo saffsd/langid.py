@@ -28,6 +28,7 @@ if __name__ == "__main__":
   parser.add_argument("-m","--model", help="save output to MODEL_DIR", metavar="MODEL_DIR")
   parser.add_argument("--buckets", type=int, metavar='N', help="distribute features into N buckets", default=NUM_BUCKETS)
   parser.add_argument("--chunksize", type=int, help="max chunk size (number of files to tokenize at a time - smaller should reduce memory use)", default=CHUNKSIZE)
+  parser.add_argument("--no_norm", default=False, action="store_true", help="do not normalize difference in p(t|C) by sum p(t|C)")
   parser.add_argument("lang1", metavar='LANG', help="first language")
   parser.add_argument("lang2", metavar='LANG', help="second language")
   parser.add_argument("corpus", help="read corpus from CORPUS_DIR", metavar="CORPUS_DIR")
@@ -57,7 +58,10 @@ if __name__ == "__main__":
   if args.output:
     weights_path = args.output
   else:
-    weights_path = m_path('BLfeats.{0}.{1}'.format(args.lang1, args.lang2))
+    if args.no_norm:
+      weights_path = m_path('BLfeats.no_norm.{0}.{1}'.format(args.lang1, args.lang2))
+    else:
+      weights_path = m_path('BLfeats.{0}.{1}'.format(args.lang1, args.lang2))
 
   # Where temp files go
   if args.temp:
@@ -98,6 +102,6 @@ if __name__ == "__main__":
   for i in range(nb_ptc.shape[1]):
     nb_ptc[:,i] = (1/np.exp(nb_ptc[:,i][None,:] - nb_ptc[:,i][:,None]).sum(1))
 
-  w = dict(zip(feats, np.abs((nb_ptc[:,0] - nb_ptc[:,1]) / nb_ptc.sum(1))))
+  w = dict(zip(feats, np.abs((nb_ptc[:,0] - nb_ptc[:,1]) / (nb_ptc.sum(1) if not args.no_norm else 1))))
   write_weights(w, weights_path)
   print "wrote weights to {0}".format(weights_path)
