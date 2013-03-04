@@ -75,6 +75,7 @@ if __name__ == "__main__":
   parser.add_argument("--df_feats", metavar="FEATS", help="Instead of DF feature selection, use a list of features from FEATS")
   parser.add_argument("--ld_feats", metavar="FEATS", help="Instead of LD feature selection, use a list of features from FEATS")
   parser.add_argument("--feats_per_lang", type=int, metavar='N', help="select top N features for each language", default=FEATURES_PER_LANG)
+  parser.add_argument("--no_domain_ig", action="store_true", default=False, help="use only per-langugage IG in LD calculation")
   parser.add_argument("--debug", action="store_true", default=False, help="produce debug output (all intermediates)")
   parser.add_argument("corpus", help="read corpus from CORPUS_DIR", metavar="CORPUS_DIR")
 
@@ -229,7 +230,7 @@ if __name__ == "__main__":
       ig_vals[label] = dict((row[0], numpy.array(row[1].flat)) for row in ig)
 
     # Select features according to the LD criteria
-    features_per_lang = select_LD_features(ig_vals['lang'], ig_vals['domain'], args.feats_per_lang)
+    features_per_lang = select_LD_features(ig_vals['lang'], ig_vals['domain'], args.feats_per_lang, ignore_domain = args.no_domain_ig)
     LDfeats = reduce(set.union, map(set, features_per_lang.values()))
     print 'selected %d features' % len(LDfeats)
 
