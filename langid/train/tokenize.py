@@ -134,7 +134,7 @@ def pass_tokenize(chunk_items):
 
 def build_index(items, tokenizer, outdir, buckets=NUM_BUCKETS, jobs=None, chunksize=CHUNKSIZE):
   """
-  @param items a list of (language, path) pairs
+  @param items a list of (domain, language, path) tuples
   """
   global b_dirs, complete
 
