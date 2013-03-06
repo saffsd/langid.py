@@ -118,7 +118,7 @@ from contextlib import contextmanager, closing
 import multiprocessing as mp
 
 @contextmanager
-def MapPool(processes=None, initializer=None, initargs=None, maxtasksperchild=None):
+def MapPool(processes=None, initializer=None, initargs=None, maxtasksperchild=None, chunksize=1):
   """
   Contextmanager to express the common pattern of not using multiprocessing if
   only 1 job is allocated (for example for debugging reasons)
@@ -128,7 +128,7 @@ def MapPool(processes=None, initializer=None, initargs=None, maxtasksperchild=No
 
   if processes > 1:
     with closing( mp.Pool(processes, initializer, initargs, maxtasksperchild)) as pool:
-      f = lambda fn, chunks: pool.imap_unordered(fn, chunks, chunksize=1)
+      f = lambda fn, chunks: pool.imap_unordered(fn, chunks, chunksize=chunksize)
       yield f
   else:
     if initializer is not None:
