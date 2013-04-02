@@ -112,7 +112,7 @@ def pass_tokenize(chunk_items):
   term_lng_freq = defaultdict(lambda: defaultdict(int))
   term_dom_freq = defaultdict(lambda: defaultdict(int))
 
-  for doc_index, (domain_id, lang_id, path) in enumerate(chunk_items):
+  for domain_id, lang_id, path in chunk_items:
     with open(path) as f:
       tokenset = set(extractor(f.read()))
       for token in tokenset:
