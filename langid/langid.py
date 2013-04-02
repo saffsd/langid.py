@@ -187,7 +187,14 @@ class LanguageIdentifier(object):
         The technique for dealing with underflow is described in
         http://jblevins.org/log/log-sum-exp
         """
-        pd = (1/np.exp(pd[None,:] - pd[:,None]).sum(1))
+        # Ignore overflow when computing the exponential. Large values
+        # in the exp produce a result of inf, which does not affect
+        # the correctness of the calculation (as 1/x->0 as x->inf). 
+        # On Linux this does not actually trigger a warning, but on 
+        # Windows this causes a RuntimeWarning, so we explicitly 
+        # suppress it.
+        with np.errstate(over='ignore'):
+          pd = (1/np.exp(pd[None,:] - pd[:,None]).sum(1))
         return pd
     else:
       def norm_probs(pd):
