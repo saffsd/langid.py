@@ -279,3 +279,6 @@ v1.0:
 
 v1.1:
   * Reorganized internals to implement a LanguageIdentifier class
+
+v1.1.2:
+  * Added a 'langid' entry point
