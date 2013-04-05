@@ -21,7 +21,9 @@ setup(name='langid',
           # -*- Extra requirements: -*-
           'numpy',
       ],
-      entry_points="""
-      # -*- Entry points: -*-
-      """,
+      entry_points= {
+        'console_scripts': [
+          'langid = langid.langid:main',
+        ],
+      },
       )

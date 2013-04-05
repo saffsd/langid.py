@@ -437,7 +437,9 @@ def application(environ, start_response):
   start_response(status, headers)
   return [json.dumps(response)]
 
-if __name__ == "__main__":
+def main():
+  global identifier
+
   parser = optparse.OptionParser()
   parser.add_option('-s','--serve',action='store_true', default=False, dest='serve', help='launch web service')
   parser.add_option('--host', default=HOST, dest='host', help='host/ip to bind to')
@@ -580,3 +582,6 @@ if __name__ == "__main__":
       else:
         print _process(sys.stdin.read())
      
+
+if __name__ == "__main__":
+  main()
