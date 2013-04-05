@@ -62,6 +62,19 @@ QlpoOTFBWSZTWUv7f+4AF6dfgCAQf///////////////Yg7fAbfbn1ge3eW8BZ44uI2Y1Hfed7aB5FBp
 # Convenience methods defined below will initialize this when first called.
 identifier = None
 
+def set_languages(langs=None):
+  """
+  Set the language set used by the global identifier.
+
+  @param langs a list of language codes
+  """
+  global identifier
+  if identifier is None:
+    load_model()
+
+  return identifier.set_languages(langs)
+
+
 def classify(instance):
   """
   Convenience method using a global identifier instance with the default
@@ -174,7 +187,14 @@ class LanguageIdentifier(object):
         The technique for dealing with underflow is described in
         http://jblevins.org/log/log-sum-exp
         """
-        pd = (1/np.exp(pd[None,:] - pd[:,None]).sum(1))
+        # Ignore overflow when computing the exponential. Large values
+        # in the exp produce a result of inf, which does not affect
+        # the correctness of the calculation (as 1/x->0 as x->inf). 
+        # On Linux this does not actually trigger a warning, but on 
+        # Windows this causes a RuntimeWarning, so we explicitly 
+        # suppress it.
+        with np.errstate(over='ignore'):
+          pd = (1/np.exp(pd[None,:] - pd[:,None]).sum(1))
         return pd
     else:
       def norm_probs(pd):
@@ -186,7 +206,7 @@ class LanguageIdentifier(object):
     # multiple times.
     self.__full_model = nb_ptc, nb_pc, nb_classes
 
-  def set_languages(self, langs):
+  def set_languages(self, langs=None):
     logger.debug("restricting languages to: %s", langs)
 
     # Unpack the full original model. This is needed in case the language set
@@ -194,16 +214,22 @@ class LanguageIdentifier(object):
     # set.
     nb_ptc, nb_pc, nb_classes = self.__full_model
 
-    # We were passed a restricted set of languages. Trim the arrays accordingly
-    # to speed up processing.
-    for lang in langs:
-      if lang not in nb_classes:
-        raise ValueError, "Unknown language code %s" % lang
+    if langs is None:
+      self.nb_classes = nb_classes 
+      self.nb_ptc = nb_ptc
+      self.nb_pc = nb_pc
 
-    subset_mask = np.fromiter((l in langs for l in nb_classes), dtype=bool)
-    self.nb_classes = [ c for c in nb_classes if c in langs ]
-    self.nb_ptc = nb_ptc[:,subset_mask]
-    self.nb_pc = nb_pc[subset_mask]
+    else:
+      # We were passed a restricted set of languages. Trim the arrays accordingly
+      # to speed up processing.
+      for lang in langs:
+        if lang not in nb_classes:
+          raise ValueError, "Unknown language code %s" % lang
+
+      subset_mask = np.fromiter((l in langs for l in nb_classes), dtype=bool)
+      self.nb_classes = [ c for c in nb_classes if c in langs ]
+      self.nb_ptc = nb_ptc[:,subset_mask]
+      self.nb_pc = nb_pc[subset_mask]
 
   def instance2fv(self, text):
     """
