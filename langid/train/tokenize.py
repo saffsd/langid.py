@@ -48,6 +48,7 @@ import shutil
 import tempfile
 import marshal
 import multiprocessing as mp
+import random
 import atexit
 
 from itertools import tee 
@@ -88,10 +89,12 @@ def cleanup():
     # Failed before globals defined, nothing to clean
     pass
 
-def setup_pass_tokenize(tokenizer, b_dirs):
-  global __tokenizer, __b_dirs
+def setup_pass_tokenize(tokenizer, b_dirs, sample_count, sample_size):
+  global __tokenizer, __b_dirs, __sample_count, __sample_size
   __tokenizer = tokenizer
   __b_dirs = b_dirs
+  __sample_count = sample_count
+  __sample_size = sample_size
 
 def pass_tokenize(chunk_items):
   """
@@ -103,7 +106,7 @@ def pass_tokenize(chunk_items):
   now we are chunked on the term axis rather
   than the document axis.
   """
-  global __maxorder, __b_dirs, __extractor
+  global __maxorder, __b_dirs, __extractor, __sample_count, __sample_size
   __procname = mp.current_process().name
   b_freq_lang = [tempfile.mkstemp(prefix=__procname+'-', suffix='.lang', dir=p)[0] for p in __b_dirs]
   b_freq_domain = [tempfile.mkstemp(prefix=__procname+'-', suffix='.domain', dir=p)[0] for p in __b_dirs]
@@ -114,10 +117,24 @@ def pass_tokenize(chunk_items):
 
   for domain_id, lang_id, path in chunk_items:
     with open(path) as f:
-      tokenset = set(extractor(f.read()))
-      for token in tokenset:
-        term_lng_freq[token][lang_id] += 1
-        term_dom_freq[token][domain_id] += 1
+      if __sample_count:
+        # sampling tokenization
+        text = f.read()
+        poss = max(1,len(text) - __sample_size) # possibe start locations
+        count = min(poss, __sample_count) # reduce number of samples if document is too short
+        offsets = random.sample(xrange(poss), count)
+        for offset in offsets:
+          tokenset = set(extractor(text[offset: offset+__sample_size]))
+          for token in tokenset:
+            term_lng_freq[token][lang_id] += 1
+            term_dom_freq[token][domain_id] += 1
+          
+      else:
+        # whole-document tokenization
+        tokenset = set(extractor(f.read()))
+        for token in tokenset:
+          term_lng_freq[token][lang_id] += 1
+          term_dom_freq[token][domain_id] += 1
 
   for term in term_lng_freq:
     bucket_index = hash(term) % len(b_freq_lang)
@@ -132,7 +149,7 @@ def pass_tokenize(chunk_items):
 
   return len(term_lng_freq)
 
-def build_index(items, tokenizer, outdir, buckets=NUM_BUCKETS, jobs=None, chunksize=CHUNKSIZE):
+def build_index(items, tokenizer, outdir, buckets=NUM_BUCKETS, jobs=None, chunksize=CHUNKSIZE, sample_count=None, sample_size=None):
   """
   @param items a list of (domain, language, path) tuples
   """
@@ -152,7 +169,7 @@ def build_index(items, tokenizer, outdir, buckets=NUM_BUCKETS, jobs=None, chunks
   # will have 2 chunks
   chunk_size = max(1,min(len(items) / (jobs * 2), chunksize))
   item_chunks = list(chunk(items, chunk_size))
-  pass_tokenize_globals = (tokenizer, b_dirs)
+  pass_tokenize_globals = (tokenizer, b_dirs, sample_count, sample_size)
 
   with MapPool(jobs, setup_pass_tokenize, pass_tokenize_globals) as f:
     pass_tokenize_out = f(pass_tokenize, item_chunks)
@@ -162,6 +179,11 @@ def build_index(items, tokenizer, outdir, buckets=NUM_BUCKETS, jobs=None, chunks
     chunk_count = len(item_chunks)
     print "chunk size: {0} ({1} chunks)".format(chunk_size, chunk_count)
     print "job count: {0}".format(jobs)
+
+    if sample_count:
+      print "sampling-based tokenization: size {0} count {1}".format(sample_size, sample_count)
+    else:
+      print "whole-document tokenization"
 
     for i, keycount in enumerate(pass_tokenize_out):
       print "tokenized chunk (%d/%d) [%d keys]" % (i+1,chunk_count, keycount)
@@ -180,6 +202,10 @@ if __name__ == "__main__":
   parser.add_argument("--chunksize", type=int, help="max chunk size (number of files to tokenize at a time - smaller should reduce memory use)", default=CHUNKSIZE)
   parser.add_argument("-t", "--temp", metavar='TEMP_DIR', help="store buckets in TEMP_DIR instead of in MODEL_DIR/buckets")
   parser.add_argument("model", metavar='MODEL_DIR', help="read index and produce output in MODEL_DIR")
+
+  group = parser.add_argument_group('sampling')
+  group.add_argument("--sample_size", type=int, help="size of sample for sampling-based tokenization", default=140)
+  group.add_argument("--sample_count", type=int, help="number of samples for sampling-based tokenization", default=None)
   
   args = parser.parse_args()
   
@@ -218,7 +244,7 @@ if __name__ == "__main__":
     max_order = args.max_order if args.max_order else MAX_NGRAM_ORDER
     tokenizer = NGramTokenizer(1,max_order)
     print "using n-gram tokenizer: max_order({0})".format(max_order)
-  b_dirs = build_index(items, tokenizer, buckets_dir, args.buckets, args.jobs, args.chunksize)
+  b_dirs = build_index(items, tokenizer, buckets_dir, args.buckets, args.jobs, args.chunksize, args.sample_count, args.sample_size)
 
   # output the paths to the buckets
   with open(bucketlist_path,'w') as f:

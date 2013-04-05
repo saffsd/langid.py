@@ -77,6 +77,11 @@ if __name__ == "__main__":
   parser.add_argument("--feats_per_lang", type=int, metavar='N', help="select top N features for each language", default=FEATURES_PER_LANG)
   parser.add_argument("--no_domain_ig", action="store_true", default=False, help="use only per-langugage IG in LD calculation")
   parser.add_argument("--debug", action="store_true", default=False, help="produce debug output (all intermediates)")
+
+  group = parser.add_argument_group('sampling')
+  group.add_argument("--sample_size", type=int, help="size of sample for sampling-based tokenization", default=140)
+  group.add_argument("--sample_count", type=int, help="number of samples for sampling-based tokenization", default=None)
+
   parser.add_argument("corpus", help="read corpus from CORPUS_DIR", metavar="CORPUS_DIR")
 
   args = parser.parse_args()
@@ -168,7 +173,7 @@ if __name__ == "__main__":
       tk = NGramTokenizer(1, args.max_order)
     
     # First-pass tokenization, used to determine DF of features
-    b_dirs = build_index(items, tk, buckets_dir, args.buckets, args.jobs, args.chunksize)
+    b_dirs = build_index(items, tk, buckets_dir, args.buckets, args.jobs, args.chunksize, args.sample_count, args.sample_size)
 
     if args.debug:
       # output the paths to the buckets
