@@ -52,7 +52,7 @@ def select_LD_features(ig_lang, ig_domain, feats_per_lang, ignore_domain=False):
   """
   @param ignore_domain boolean to indicate whether to use domain weights
   """
-  assert len(ig_lang) == len(ig_domain)
+  assert (ig_domain is None) or (len(ig_lang) == len(ig_domain))
   num_lang = len(ig_lang.values()[0])
   num_term = len(ig_lang)
 
@@ -97,7 +97,7 @@ if __name__ == "__main__":
   print "feature output path:", feature_path
 
   lang_w = read_weights(lang_w_path)
-  domain_w = read_weights(domain_w_path)
+  domain_w = read_weights(domain_w_path) if not args.no_domain_ig else None
 
   features_per_lang = select_LD_features(lang_w, domain_w, args.feats_per_lang, ignore_domain=args.no_domain_ig)
   if args.per_lang:

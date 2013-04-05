@@ -231,7 +231,7 @@ if __name__ == "__main__":
       ig_vals[label] = dict((row[0], numpy.array(row[1].flat)) for row in ig)
 
     # Select features according to the LD criteria
-    features_per_lang = select_LD_features(ig_vals['lang'], ig_vals['domain'], args.feats_per_lang, ignore_domain = args.no_domain_ig)
+    features_per_lang = select_LD_features(ig_vals['lang'], ig_vals.get('domain'), args.feats_per_lang, ignore_domain = args.no_domain_ig)
     LDfeats = reduce(set.union, map(set, features_per_lang.values()))
     print 'selected %d features' % len(LDfeats)
 
