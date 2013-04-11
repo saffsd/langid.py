@@ -282,3 +282,6 @@ v1.1:
 
 v1.1.2:
   * Added a 'langid' entry point
+
+v1.1.3:
+  * Made `classify` and `rank` return Python data types rather than numpy ones

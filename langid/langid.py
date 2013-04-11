@@ -271,8 +271,8 @@ class LanguageIdentifier(object):
     fv = self.instance2fv(text)
     probs = self.norm_probs(self.nb_classprobs(fv))
     cl = np.argmax(probs)
-    conf = probs[cl]
-    pred = self.nb_classes[cl]
+    conf = float(probs[cl])
+    pred = str(self.nb_classes[cl])
     return pred, conf
 
   def rank(self, text):
@@ -281,7 +281,7 @@ class LanguageIdentifier(object):
     """
     fv = self.instance2fv(text)
     probs = self.norm_probs(self.nb_classprobs(fv))
-    return [(k,v) for (v,k) in sorted(zip(probs, self.nb_classes), reverse=True)]
+    return [(str(k),float(v)) for (v,k) in sorted(zip(probs, self.nb_classes), reverse=True)]
 
   def cl_path(self, path):
     """
