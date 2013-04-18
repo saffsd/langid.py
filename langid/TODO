@@ -1,0 +1,16 @@
+This branch contains work on porting langid.py to Python3.
+
+The main langid.py was ported with 2to3. This was smooth
+for the most part, except for a problem with the model.
+The issue was that numpy data structures pickled in Python 2
+did not unpickle properly in Python 3. This was resolved
+by using exclusively Python native data structures for the
+model. The parameters of the model are unchanged between
+the Python2 and Python3 versions, only the concrete data
+structures used.
+
+TODO:
+1) Create a version compatible with both Python2 and Python3.
+2) Port the training tools.
+
+Marco Lui, April 2013
