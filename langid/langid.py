@@ -37,6 +37,7 @@ HOST = None #leave as none for auto-detect
 PORT = 9008
 FORCE_WSGIREF = False
 NORM_PROBS = True # Normalize optput probabilities.
+CHUNK_SIZE = 200 # Divide document into N-byte segments and apply langid to each.
 
 # NORM_PROBS can be set to False for a small speed increase. It does not
 # affect the relative ordering of the predicted classes. 
@@ -437,6 +438,17 @@ def application(environ, start_response):
   start_response(status, headers)
   return [json.dumps(response)]
 
+from itertools import islice
+def chunk(seq, chunksize):
+  """
+  Break a sequence into chunks not exceeeding a predetermined size
+  """
+  seq_iter = iter(seq)
+  while True:
+    chunk = tuple(islice(seq_iter, chunksize))
+    if not chunk: break
+    yield chunk
+
 def main():
   global identifier
 
@@ -454,6 +466,7 @@ def main():
   parser.add_option('-u', '--url', help='langid of URL')
   parser.add_option('--line', action="store_true", default=False, help='process pipes line-by-line rather than as a document')
   parser.add_option('-n', '--normalize', action='store_true', default=False, help='normalize confidence scores to probability values')
+  parser.add_option('-c', '--chunking', action='store_true', default=False, help='chunk-based langid (EXPERIMENTAL)')
   options, args = parser.parse_args()
 
   if options.verbosity:
@@ -486,6 +499,17 @@ def main():
     """
     if options.dist:
       payload = identifier.rank(text)
+    elif options.chunking:
+      freq = defaultdict(int)
+      for seg in chunk(text, CHUNK_SIZE):
+        cl = identifier.classify(seg)
+        freq[cl[0]] += 1
+      if freq:
+        most_common = max(freq, key=freq.get)
+        prop = float(freq[most_common]) / sum(freq.values())
+        payload = (most_common,prop) 
+      else:
+        payload = ('UNKNOWN', 0.)
     else:
       payload = identifier.classify(text)
 
