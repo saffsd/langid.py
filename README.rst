@@ -316,6 +316,11 @@ Acknowledgements
 ----------------
 Thanks to aitzol for help with packaging ``langid.py`` for PyPI.
 
+Related Implementations
+-----------------------
+Dawid Weiss has ported langid.py to Java, with a particular focus on
+speed and memory use. Available from https://github.com/carrotsearch/langid-java
+
 Changelog
 ---------
 v1.0: 
