@@ -334,3 +334,6 @@ v1.1.2:
 
 v1.1.3:
   * Made `classify` and `rank` return Python data types rather than numpy ones
+
+v1.1.4:
+  * Added set_languages to __init__.py, fixing #10 (and properly fixing #8)
