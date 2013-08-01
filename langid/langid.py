@@ -257,6 +257,49 @@ class LanguageIdentifier(object):
 
     return arr
 
+  ## optimized version by Ralf Brown
+  def instance2classprobs(self, text):
+    """
+    Compute class probabilities for an instance according to the trained model
+    """
+    if isinstance(text, unicode):
+      text = text.encode('utf8')
+
+    # Convert the text to a sequence of ascii values
+    ords = map(ord, text)
+
+    state = 0
+    if len(ords) < self.nb_numfeats / 10:
+        # for very short texts, just apply each production every time the
+        # state changes, rather than counting the number of occurrences of
+        # each state
+        pdc = np.zeros(len(self.nb_classes))
+        for letter in ords:
+            state = self.tk_nextmove[(state << 8) + letter]
+            for index in self.tk_output.get(state, []):
+                # compute the dot product incrementally, avoiding lots
+                # of multiplications by zero with a sparse
+                # feature-count vector
+                pdc += self.nb_ptc[index]
+    else:
+        # Count the number of times we enter each state
+        statecount = defaultdict(int)
+        for letter in ords:
+            state = self.tk_nextmove[(state << 8) + letter]
+            statecount[state] += 1
+
+        # Update all the productions corresponding to the state
+        arr = np.zeros((self.nb_numfeats,), dtype='uint32')
+        for state in statecount:
+            for index in self.tk_output.get(state, []):
+                arr[index] += statecount[state]
+        # compute the partial log-probability of the document given each class
+        pdc = np.dot(arr,self.nb_ptc)
+
+    # compute the partial log-probability of the document in each class
+    pd = pdc + self.nb_pc
+    return pd
+
   def nb_classprobs(self, fv):
     # compute the partial log-probability of the document given each class
     pdc = np.dot(fv,self.nb_ptc)
@@ -268,8 +311,8 @@ class LanguageIdentifier(object):
     """
     Classify an instance.
     """
-    fv = self.instance2fv(text)
-    probs = self.norm_probs(self.nb_classprobs(fv))
+    probs = self.instance2classprobs(text)
+    probs = self.norm_probs(probs)
     cl = np.argmax(probs)
     conf = float(probs[cl])
     pred = str(self.nb_classes[cl])
@@ -279,8 +322,8 @@ class LanguageIdentifier(object):
     """
     Return a list of languages in order of likelihood.
     """
-    fv = self.instance2fv(text)
-    probs = self.norm_probs(self.nb_classprobs(fv))
+    probs = self.instance2classprobs(text)
+    probs = self.norm_probs(probs)
     return [(str(k),float(v)) for (v,k) in sorted(zip(probs, self.nb_classes), reverse=True)]
 
   def cl_path(self, path):
