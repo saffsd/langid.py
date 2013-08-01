@@ -37,9 +37,15 @@ HOST = None #leave as none for auto-detect
 PORT = 9008
 FORCE_WSGIREF = False
 NORM_PROBS = True # Normalize optput probabilities.
+SHORT_THRESH = 650 # changeover length in bytes 
 
 # NORM_PROBS can be set to False for a small speed increase. It does not
 # affect the relative ordering of the predicted classes. 
+ 
+# SHORT_THRESH is the threshold for changing between two methods for
+# probability computation, where one is faster for short texts and the
+# other is faster for long texts. 650 bytes was determined empirically
+# but may vary based on data and system architecture.
 
 import base64
 import bz2
@@ -172,7 +178,7 @@ class LanguageIdentifier(object):
       return cls.from_modelstring(f.read(), *args, **kwargs)
 
   def __init__(self, nb_ptc, nb_pc, nb_numfeats, nb_classes, tk_nextmove, tk_output,
-               norm_probs = NORM_PROBS):
+               norm_probs = NORM_PROBS, short_thresh = SHORT_THRESH):
     self.nb_ptc = nb_ptc
     self.nb_pc = nb_pc
     self.nb_numfeats = nb_numfeats
@@ -201,6 +207,7 @@ class LanguageIdentifier(object):
         return pd
 
     self.norm_probs = norm_probs
+    self.short_thresh = short_thresh
 
     # Maintain a reference to the full model, in case we change our language set
     # multiple times.
@@ -269,7 +276,7 @@ class LanguageIdentifier(object):
     ords = map(ord, text)
 
     state = 0
-    if len(ords) < self.nb_numfeats / 10:
+    if len(ords) < self.short_thresh:
         # for very short texts, just apply each production every time the
         # state changes, rather than counting the number of occurrences of
         # each state
@@ -497,6 +504,7 @@ def main():
   parser.add_option('-u', '--url', help='langid of URL')
   parser.add_option('--line', action="store_true", default=False, help='process pipes line-by-line rather than as a document')
   parser.add_option('-n', '--normalize', action='store_true', default=False, help='normalize confidence scores to probability values')
+  parser.add_option('--short_thresh', help='limit (in bytes) for using short-text processing (default: %d)' % SHORT_THRESH)
   options, args = parser.parse_args()
 
   if options.verbosity:
@@ -507,16 +515,22 @@ def main():
   if options.batch and options.serve:
     parser.error("cannot specify both batch and serve at the same time")
 
+  # short message threshold for switchover in probability computation,
+  # as suggested by Ralf Brown (github issue #11)
+  short_thresh = int(options.short_thresh) if options.short_thresh else SHORT_THRESH
+
   # unpack a model 
   if options.model:
     try:
-      identifier = LanguageIdentifier.from_modelpath(options.model, norm_probs = options.normalize)
+      identifier = LanguageIdentifier.from_modelpath(options.model, 
+          norm_probs = options.normalize, short_thresh = short_thresh)
       logger.info("Using external model: %s", options.model)
     except IOError, e:
       logger.warning("Failed to load %s: %s" % (options.model,e))
   
   if identifier is None:
-    identifier = LanguageIdentifier.from_modelstring(model, norm_probs = options.normalize)
+    identifier = LanguageIdentifier.from_modelstring(model, 
+        norm_probs = options.normalize, short_thresh = short_thresh)
     logger.info("Using internal model")
 
   if options.langs:
