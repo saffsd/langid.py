@@ -122,6 +122,7 @@ if __name__ == "__main__":
   print "identified {0} files".format(len(indexer.items))
 
   items = [ (d,l,p) for (d,l,n,p) in indexer.items ]
+  indexer = None
   if args.debug:
     # output the language index
     with open(langs_path,'w') as f:
@@ -194,6 +195,7 @@ if __name__ == "__main__":
     if DFfeats is None:
       # Choose the first-stage features
       DFfeats = ngram_select(doc_count, args.max_order, args.df_tokens)
+    doc_count = None
 
     if args.debug:
       feature_path = os.path.join(model_dir, 'DFfeats')
@@ -212,12 +214,16 @@ if __name__ == "__main__":
     # over the first-pass counts.
     DF_scanner = Scanner(DFfeats)
     b_dirs = build_index(items, DF_scanner, buckets_dir, args.buckets, args.jobs, args.chunksize)
+    DF_scanner = None
 
     # Build vectors of domain and language distributions for use in IG calculation
-    domain_dist_vec = numpy.array([ domain_dist[domain_index[d]]
-            for d in sorted(domain_index, key=domain_index.get)], dtype=int)
+    if not args.no_domain_ig:
+      domain_dist_vec = numpy.array([ domain_dist[domain_index[d]]
+              for d in sorted(domain_index, key=domain_index.get)], dtype=int)
+    domain_dist = None
     lang_dist_vec = numpy.array([ lang_dist[lang_index[l]]
             for l in sorted(lang_index.keys(), key=lang_index.get)], dtype=int)
+    lang_dist = None
 
     # Compute IG
     ig_params = [
@@ -234,9 +240,12 @@ if __name__ == "__main__":
         weights_path = os.path.join(model_dir, 'IGweights' + suffix + ('.bin' if binarize else ''))
         write_weights(ig, weights_path)
       ig_vals[label] = dict((row[0], numpy.array(row[1].flat)) for row in ig)
+      ig = None
+    DFfeats = None
 
     # Select features according to the LD criteria
     features_per_lang = select_LD_features(ig_vals['lang'], ig_vals.get('domain'), args.feats_per_lang, ignore_domain = args.no_domain_ig)
+    ig_vals = None
     LDfeats = reduce(set.union, map(set, features_per_lang.values()))
     print 'selected %d features' % len(LDfeats)
 
@@ -250,6 +259,7 @@ if __name__ == "__main__":
         for i in range(len(features_per_lang)):
           writer.writerow(map(repr,features_per_lang[i]))
       print 'wrote LD.perlang features to "%s"' % feature_path + '.perlang'
+    features_per_lang = None
 
   # Compile a scanner for the LDfeats
   tk_nextmove, tk_output = build_scanner(LDfeats)
@@ -258,21 +268,33 @@ if __name__ == "__main__":
     with open(scanner_path, 'w') as f:
       cPickle.dump((tk_nextmove, tk_output, LDfeats), f)
     print "wrote scanner to {0}".format(scanner_path)
+  LDfeats = None
 
   # Assemble the NB model
   langs = sorted(lang_index, key=lang_index.get)
+  lang_index = None
 
   cm = generate_cm([ (l,p) for d,l,p in items], len(langs))
   paths = zip(*items)[2]
+  items = None
 
   nb_classes = langs
+  langs = None
   nb_pc = learn_pc(cm)
   nb_ptc = learn_ptc(paths, tk_nextmove, tk_output, cm, buckets_dir, args)
+  paths = None
+  cm = None
 
   # output the model
   output_path = os.path.join(model_dir, 'model')
   model = nb_ptc, nb_pc, nb_classes, tk_nextmove, tk_output
-  string = base64.b64encode(bz2.compress(cPickle.dumps(model)))
+  dump = cPickle.dumps(model)
+  tk_nextmove = None
+  tk_output = None
+  nb_pc = None
+  nb_classes = None
+  model = None
+  string = base64.b64encode(bz2.compress(dump))
   with open(output_path, 'w') as f:
     f.write(string)
   print "wrote model to %s (%d bytes)" % (output_path, len(string))
