@@ -226,7 +226,7 @@ class LanguageIdentifier(object):
       # to speed up processing.
       for lang in langs:
         if lang not in nb_classes:
-          raise ValueError, "Unknown language code %s" % lang
+          raise ValueError("Unknown language code %s" % lang)
 
       subset_mask = np.fromiter((l in langs for l in nb_classes), dtype=bool)
       self.nb_classes = [ c for c in nb_classes if c in langs ]
