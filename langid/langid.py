@@ -560,10 +560,10 @@ def main():
     writer = csv.writer(sys.stdout)
     pool = mp.Pool()
     if options.dist:
-      writer.writerow(['path']+nb_classes)
+      writer.writerow(['path']+identifier.nb_classes)
       for path, ranking in pool.imap_unordered(rank_path, generate_paths()):
         ranking = dict(ranking)
-        row = [path] + [ranking[c] for c in nb_classes]
+        row = [path] + [ranking[c] for c in identifier.nb_classes]
         writer.writerow(row)
     else:
       for path, (lang,conf) in pool.imap_unordered(cl_path, generate_paths()):
