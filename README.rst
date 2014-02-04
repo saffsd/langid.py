@@ -156,6 +156,17 @@ When using ``langid.py`` as a library, the set_languages method can be used to c
   >>> langid.classify("I do not speak english")
   ('en', 0.99176190378750373)
 
+Batch Mode
+----------
+
+``langid.py`` supports batch mode processing, which can be invoked with the ``-b`` flag.
+In this mode, ``langid.py`` reads a list of paths to files to classify as arguments.
+If no arguments are supplied, ``langid.py`` reads the list of paths from ``stdin``,
+this is useful for using ``langid.py`` with UNIX utilities such as ``find``.
+
+In batch mode, ``langid.py`` uses ``multiprocessing`` to invoke multiple instances of
+the classifier, utilizing all available CPUs to classify documents in parallel. 
+
 .. Probability Normalization
 
 Probability Normalization

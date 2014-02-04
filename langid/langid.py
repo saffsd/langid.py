@@ -543,8 +543,13 @@ def main():
     import multiprocessing as mp
 
     def generate_paths():
-      for line in sys.stdin:
-        path = line.strip()
+      if len(args) > 0:
+        paths = args
+      else:
+        from itertools import imap
+        paths = map(str.strip,sys.stdin)
+
+      for path in paths:
         if path:
           if os.path.isfile(path):
             yield path
