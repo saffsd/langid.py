@@ -98,34 +98,43 @@ class CorpusIndexer(object):
     self.prune_min_domain(self.min_domain)
 
   def index(self, root):
+    if os.path.isdir(root):
+      # root supplied was the root of a directory structure
+      candidates = []
+      for dirpath, dirnames, filenames in os.walk(root, followlinks=True):
+        for docname in filenames:
+          candidates.append((dirpath, docname))
+    else:
+      # root supplied was a file, interpet as list of paths
+      candidates = [os.path.split(str.strip(l)) for l in open(root)]
+
     # build a list of paths
     paths = []
-    for dirpath, dirnames, filenames in os.walk(root, followlinks=True):
-      for docname in filenames:
-        if random.random() < self.proportion:
-          # Each file has 'proportion' chance of being selected.
-          path = os.path.join(dirpath, docname)
+    for dirpath, docname in candidates:
+      if random.random() < self.proportion:
+        # Each file has 'proportion' chance of being selected.
+        path = os.path.join(dirpath, docname)
 
-          # split the dirpath into identifying components
-          d, lang = os.path.split(dirpath)
-          d, domain = os.path.split(d)
+        # split the dirpath into identifying components
+        d, lang = os.path.split(dirpath)
+        d, domain = os.path.split(d)
 
-          # index the language and the domain
-          try:
-            # TODO: If lang is pre-specified but not domain, we can end up 
-            #       enumerating empty domains.
-            domain_id = self.domain_index[domain]
-            lang_id = self.lang_index[lang]
-          except KeyError:
-            # lang or domain outside a pre-specified set so
-            # skip this document.
-            continue
+        # index the language and the domain
+        try:
+          # TODO: If lang is pre-specified but not domain, we can end up 
+          #       enumerating empty domains.
+          domain_id = self.domain_index[domain]
+          lang_id = self.lang_index[lang]
+        except KeyError:
+          # lang or domain outside a pre-specified set so
+          # skip this document.
+          continue
 
-          # add the domain-lang relation to the coverage index
-          self.coverage_index[domain].add(lang)
+        # add the domain-lang relation to the coverage index
+        self.coverage_index[domain].add(lang)
 
-          # add the item to our list
-          self.items.append((domain_id,lang_id,docname,path))
+        # add the item to our list
+        self.items.append((domain_id,lang_id,docname,path))
 
   def prune_min_domain(self, min_domain):
     # prune files for all languages that do not occur in at least min_domain 
