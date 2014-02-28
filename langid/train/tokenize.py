@@ -37,6 +37,7 @@ or implied, of the copyright holder.
 # Default values
 # Can be overriden with command-line options
 ######
+MIN_NGRAM_ORDER = 1 # smallest order of n-grams to consider
 MAX_NGRAM_ORDER = 4 # largest order of n-grams to consider
 TOP_DOC_FREQ = 15000 # number of tokens to consider for each order
 NUM_BUCKETS = 64 # number of buckets to use in k-v pair generation
@@ -52,7 +53,7 @@ import random
 import atexit
 
 from itertools import tee 
-from collections import defaultdict
+from collections import defaultdict, Counter
 
 from common import makedir, chunk, MapPool
 
@@ -89,24 +90,25 @@ def cleanup():
     # Failed before globals defined, nothing to clean
     pass
 
-def setup_pass_tokenize(tokenizer, b_dirs, sample_count, sample_size):
-  global __tokenizer, __b_dirs, __sample_count, __sample_size
+def setup_pass_tokenize(tokenizer, b_dirs, sample_count, sample_size, term_freq):
+  global __tokenizer, __b_dirs, __sample_count, __sample_size, __term_freq
   __tokenizer = tokenizer
   __b_dirs = b_dirs
   __sample_count = sample_count
   __sample_size = sample_size
+  __term_freq = term_freq
 
 def pass_tokenize(chunk_items):
   """
-  Chunk files into a doc->term mapping,
-  and simultaneously build a term->df count.
-  The term->df counts are redistributed to
-  buckets via python's in-built hash function.
-  This is basically an inversion step, so that 
-  now we are chunked on the term axis rather
-  than the document axis.
+  Computes the conditional frequencies of terms. The frequency can be
+  either term frequency or document frequency, controlled by a global
+  variable. Files are converted into a sequence of terms, which
+  are then reduced to either TF or DF. The counts are redistributed to
+  buckets via Python's built-in hash function. This is basically an
+  inversion setp, so that the counts are now grouped by term rather
+  than by document.
   """
-  global __maxorder, __b_dirs, __extractor, __sample_count, __sample_size
+  global __maxorder, __b_dirs, __extractor, __sample_count, __sample_size, __term_freq
   __procname = mp.current_process().name
   b_freq_lang = [tempfile.mkstemp(prefix=__procname+'-', suffix='.lang', dir=p)[0] for p in __b_dirs]
   b_freq_domain = [tempfile.mkstemp(prefix=__procname+'-', suffix='.domain', dir=p)[0] for p in __b_dirs]
@@ -124,17 +126,29 @@ def pass_tokenize(chunk_items):
         count = min(poss, __sample_count) # reduce number of samples if document is too short
         offsets = random.sample(xrange(poss), count)
         for offset in offsets:
-          tokenset = set(extractor(text[offset: offset+__sample_size]))
-          for token in tokenset:
-            term_lng_freq[token][lang_id] += 1
-            term_dom_freq[token][domain_id] += 1
+          tokens = extractor(text[offset: offset+__sample_size])
+          if args.__term_freq:
+            # Term Frequency
+            tokenset = Counter(tokens)
+          else:
+            # Document Frequency
+            tokenset = Counter(set(tokens))
+          for token, count in tokenset.iteritems():
+            term_lng_freq[token][lang_id] += count
+            term_dom_freq[token][domain_id] += count
           
       else:
         # whole-document tokenization
-        tokenset = set(extractor(f.read()))
-        for token in tokenset:
-          term_lng_freq[token][lang_id] += 1
-          term_dom_freq[token][domain_id] += 1
+        tokens = extractor(f.read())
+        if __term_freq:
+          # Term Frequency
+          tokenset = Counter(tokens)
+        else:
+          # Document Frequency
+          tokenset = Counter(set(tokens))
+        for token, count in tokenset.iteritems():
+          term_lng_freq[token][lang_id] += count
+          term_dom_freq[token][domain_id] += count
 
   for term in term_lng_freq:
     bucket_index = hash(term) % len(b_freq_lang)
@@ -149,7 +163,7 @@ def pass_tokenize(chunk_items):
 
   return len(term_lng_freq)
 
-def build_index(items, tokenizer, outdir, buckets=NUM_BUCKETS, jobs=None, chunksize=CHUNKSIZE, sample_count=None, sample_size=None):
+def build_index(items, tokenizer, outdir, buckets=NUM_BUCKETS, jobs=None, chunksize=CHUNKSIZE, sample_count=None, sample_size=None, term_freq=False):
   """
   @param items a list of (domain, language, path) tuples
   """
@@ -169,7 +183,7 @@ def build_index(items, tokenizer, outdir, buckets=NUM_BUCKETS, jobs=None, chunks
   # will have 2 chunks
   chunk_size = max(1,min(len(items) / (jobs * 2), chunksize))
   item_chunks = list(chunk(items, chunk_size))
-  pass_tokenize_globals = (tokenizer, b_dirs, sample_count, sample_size)
+  pass_tokenize_globals = (tokenizer, b_dirs, sample_count, sample_size, term_freq)
 
   with MapPool(jobs, setup_pass_tokenize, pass_tokenize_globals) as f:
     pass_tokenize_out = f(pass_tokenize, item_chunks)
@@ -197,9 +211,11 @@ if __name__ == "__main__":
   parser.add_argument("-j","--jobs", type=int, metavar='N', help="spawn N processes (set to 1 for no paralleization)")
   parser.add_argument("-s", "--scanner", metavar='SCANNER', help="use SCANNER for tokenizing")
   parser.add_argument("--buckets", type=int, metavar='N', help="distribute features into N buckets", default=NUM_BUCKETS)
+  parser.add_argument("--min_order", type=int, help="lowest n-gram order to use")
   parser.add_argument("--max_order", type=int, help="highest n-gram order to use")
   parser.add_argument("--word", action='store_true', default=False, help="use 'word' tokenization (currently str.split)")
   parser.add_argument("--chunksize", type=int, help="max chunk size (number of files to tokenize at a time - smaller should reduce memory use)", default=CHUNKSIZE)
+  parser.add_argument("--term_freq", action='store_true', help="count term frequency (default is document frequency)")
   parser.add_argument("-t", "--temp", metavar='TEMP_DIR', help="store buckets in TEMP_DIR instead of in MODEL_DIR/buckets")
   parser.add_argument("model", metavar='MODEL_DIR', help="read index and produce output in MODEL_DIR")
 
@@ -241,10 +257,15 @@ if __name__ == "__main__":
     tokenizer = str.split
     print "using str.split to tokenize"
   else:
+    min_order = args.min_order if args.min_order else MIN_NGRAM_ORDER
     max_order = args.max_order if args.max_order else MAX_NGRAM_ORDER
-    tokenizer = NGramTokenizer(1,max_order)
-    print "using n-gram tokenizer: max_order({0})".format(max_order)
-  b_dirs = build_index(items, tokenizer, buckets_dir, args.buckets, args.jobs, args.chunksize, args.sample_count, args.sample_size)
+    tokenizer = NGramTokenizer(min_order,max_order)
+    print "using n-gram tokenizer: min_order({0}) max_order({1})".format(min_order,max_order)
+  if args.term_freq:
+    print "counting term frequency"
+  else:
+    print "counting document frequency"
+  b_dirs = build_index(items, tokenizer, buckets_dir, args.buckets, args.jobs, args.chunksize, args.sample_count, args.sample_size, args.term_freq)
 
   # output the paths to the buckets
   with open(bucketlist_path,'w') as f:
