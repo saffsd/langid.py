@@ -19,6 +19,8 @@ if __name__ == "__main__":
   parser.add_argument('model', metavar="MODEL_DIR", help="path to langid.py training model dir")
   parser.add_argument('output', metavar="OUTPUT", help = "write to OUTPUT")
   parser.add_argument('-f','--features', metavar="FILE", help = 'only output features from FILE')
+  parser.add_argument('--raw', action='store_true', help="include raw features")
+  parser.add_argument('--bin', action='store_true', help="include ig for lang-bin")
   args = parser.parse_args()
 
   def model_file(name):
@@ -71,7 +73,7 @@ if __name__ == "__main__":
       records[k]['IGdomain'] = w[k][0]
 
   # IG weights for language-binarized
-  if os.path.exists(model_file('IGweights.lang.bin')) and os.path.exists(model_file('lang_index')):
+  if args.bin and os.path.exists(model_file('IGweights.lang.bin')) and os.path.exists(model_file('lang_index')):
     print >>sys.stderr, "found weights for lang.bin"
     w = read_weights(model_file('IGweights.lang.bin'))
 
@@ -105,9 +107,10 @@ if __name__ == "__main__":
     for k in feats:
       records[k].update( dict(zip(r_h, w[k])) )
 
-  headers.append('feat')
-  for k in feats:
-    records[k]['feat'] = k
+  if args.raw:
+    headers.append('feat')
+    for k in feats:
+      records[k]['feat'] = k
 
 
 
