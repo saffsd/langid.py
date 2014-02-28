@@ -156,6 +156,17 @@ When using ``langid.py`` as a library, the set_languages method can be used to c
   >>> langid.classify("I do not speak english")
   ('en', 0.99176190378750373)
 
+Batch Mode
+----------
+
+``langid.py`` supports batch mode processing, which can be invoked with the ``-b`` flag.
+In this mode, ``langid.py`` reads a list of paths to files to classify as arguments.
+If no arguments are supplied, ``langid.py`` reads the list of paths from ``stdin``,
+this is useful for using ``langid.py`` with UNIX utilities such as ``find``.
+
+In batch mode, ``langid.py`` uses ``multiprocessing`` to invoke multiple instances of
+the classifier, utilizing all available CPUs to classify documents in parallel. 
+
 .. Probability Normalization
 
 Probability Normalization
@@ -316,6 +327,11 @@ Acknowledgements
 ----------------
 Thanks to aitzol for help with packaging ``langid.py`` for PyPI.
 
+Related Implementations
+-----------------------
+Dawid Weiss has ported langid.py to Java, with a particular focus on
+speed and memory use. Available from https://github.com/carrotsearch/langid-java
+
 Changelog
 ---------
 v1.0: 
@@ -329,3 +345,6 @@ v1.1.2:
 
 v1.1.3:
   * Made `classify` and `rank` return Python data types rather than numpy ones
+
+v1.1.4:
+  * Added set_languages to __init__.py, fixing #10 (and properly fixing #8)
