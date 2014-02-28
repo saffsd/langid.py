@@ -101,7 +101,7 @@ def pass_IG(bucket):
         # Select only our listed features
         if key in __features:
           term_index[key]
-          term_freq[key][event_id] += count
+          term_freq[key][event_id] += 1 
 
   num_term = len(term_index)
   num_event = len(__dist)
