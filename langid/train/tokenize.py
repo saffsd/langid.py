@@ -109,9 +109,6 @@ def pass_tokenize(chunk_items):
   than by document.
   """
   global __maxorder, __b_dirs, __extractor, __sample_count, __sample_size, __term_freq
-  __procname = mp.current_process().name
-  b_freq_lang = [tempfile.mkstemp(prefix=__procname+'-', suffix='.lang', dir=p)[0] for p in __b_dirs]
-  b_freq_domain = [tempfile.mkstemp(prefix=__procname+'-', suffix='.domain', dir=p)[0] for p in __b_dirs]
   
   extractor = __tokenizer
   term_lng_freq = defaultdict(lambda: defaultdict(int))
@@ -150,16 +147,21 @@ def pass_tokenize(chunk_items):
           term_lng_freq[token][lang_id] += count
           term_dom_freq[token][domain_id] += count
 
+  # Output the counts to the relevant bucket files. 
+  __procname = mp.current_process().name
+  b_freq_lang = [open(os.path.join(p,__procname+'.lang'),'a') for p in __b_dirs]
+  b_freq_domain = [open(os.path.join(p,__procname+'.domain'),'a') for p in __b_dirs]
+
   for term in term_lng_freq:
     bucket_index = hash(term) % len(b_freq_lang)
     for lang, count in term_lng_freq[term].iteritems():
-      os.write(b_freq_lang[bucket_index], marshal.dumps((term, lang, count)))
+      b_freq_lang[bucket_index].write(marshal.dumps((term, lang, count)))
     for domain, count in term_dom_freq[term].iteritems():
-      os.write(b_freq_domain[bucket_index], marshal.dumps((term, domain, count)))
+      b_freq_domain[bucket_index].write(marshal.dumps((term, domain, count)))
 
   # Close all the open files
   for f in b_freq_lang + b_freq_domain:
-    os.close(f)
+    f.close()
 
   return len(term_lng_freq)
 
