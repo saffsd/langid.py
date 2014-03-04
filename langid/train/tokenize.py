@@ -134,11 +134,9 @@ def pass_tokenize(chunk_items):
           for token, count in tokenset.iteritems():
             term_lng_freq[token][lang_id] += count
             term_dom_freq[token][domain_id] += count
-      elif:
+      elif __line_level:
         # line-model - each line in a file should be interpreted as a document
         for line in f:
-          # TODO TODO
-          raise NotImplementedError()
           tokens = extractor(line)
           if __term_freq:
             # Term Frequency
@@ -267,6 +265,9 @@ if __name__ == "__main__":
   print "index path:", index_path
   print "bucketlist path:", bucketlist_path
   print "buckets path:", buckets_dir
+
+  if args.line:
+  	print "treating each LINE as a document"
 
   with open(index_path) as f:
     reader = csv.reader(f)

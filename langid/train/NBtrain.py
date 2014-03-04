@@ -44,170 +44,191 @@ import tempfile
 import marshal
 import atexit, shutil
 import multiprocessing as mp
+import gzip
 from collections import deque, defaultdict
 from contextlib import closing
 
 from common import chunk, unmarshal_iter, read_features, index, MapPool
 
-def offsets(chunks):
-  # Work out the path chunk start offsets
-  chunk_offsets = [0]
-  for c in chunks:
-    chunk_offsets.append(chunk_offsets[-1] + len(c))
-  return chunk_offsets
-
-def state_trace(path):
+def state_trace(text):
   """
   Returns counts of how often each state was entered
   """
   global __nm_arr
   c = defaultdict(int)
   state = 0
-  with open(path) as f:
-    text = f.read()
-    for letter in map(ord,text):
-      state = __nm_arr[(state << 8) + letter]
-      c[state] += 1
+  for letter in map(ord,text):
+    state = __nm_arr[(state << 8) + letter]
+    c[state] += 1
   return c
 
-def setup_pass_tokenize(nm_arr, output_states, tk_output, b_dirs):
+def setup_pass_tokenize(nm_arr, output_states, tk_output, b_dirs, line_level):
   """
   Set the global next-move array used by the aho-corasick scanner
   """
-  global __nm_arr, __output_states, __tk_output, __b_dirs
+  global __nm_arr, __output_states, __tk_output, __b_dirs, __line_level
   __nm_arr = nm_arr
   __output_states = output_states
   __tk_output = tk_output
   __b_dirs = b_dirs
+  __line_level = line_level
 
 def pass_tokenize(arg):
   """
   Tokenize documents and do counts for each feature
   Split this into buckets chunked over features rather than documents
   """
-  global __output_states, __tk_output, __b_dirs
-  chunk_offset, chunk_paths = arg
+  global __output_states, __tk_output, __b_dirs, __line_level
+  chunk_id, chunk_paths = arg
   term_freq = defaultdict(int)
-  __procname = mp.current_process().name
-  __buckets = [tempfile.mkstemp(prefix=__procname, suffix='.index', dir=p)[0] for p in __b_dirs]
 
   # Tokenize each document and add to a count of (doc_id, f_id) frequencies
-  for doc_count, path in enumerate(chunk_paths):
-    doc_id = doc_count + chunk_offset
-    count = state_trace(path)
-    for state in (set(count) & __output_states):
-      for f_id in __tk_output[state]:
-        term_freq[doc_id, f_id] += count[state]
+  doc_count = 0
+  labels = []
+  for label, path in chunk_paths:
+    with open(path) as f:
+      if __line_level:
+        # each line is treated as a document
+        for text in f:
+          count = state_trace(text)
+          for state in (set(count) & __output_states):
+            for f_id in __tk_output[state]:
+              term_freq[doc_count, f_id] += count[state]
+          doc_count += 1
+          labels.append(label)
+
+      else:
+        text = f.read()
+        count = state_trace(text)
+        for state in (set(count) & __output_states):
+          for f_id in __tk_output[state]:
+            term_freq[doc_count, f_id] += count[state]
+        doc_count += 1
+        labels.append(label)
 
   # Distribute the aggregated counts into buckets
+  __procname = mp.current_process().name
+  __buckets = [gzip.open(os.path.join(p,__procname+'.index'), 'a') for p in __b_dirs]
   bucket_count = len(__buckets)
   for doc_id, f_id in term_freq:
     bucket_index = hash(f_id) % bucket_count
     count = term_freq[doc_id, f_id]
-    item = ( f_id, doc_id, count )
-    os.write(__buckets[bucket_index], marshal.dumps(item))
+    item = ( f_id, chunk_id, doc_id, count )
+    __buckets[bucket_index].write(marshal.dumps(item))
 
   for f in __buckets:
-    os.close(f)
+    f.close()
 
-  return len(term_freq)
+  return chunk_id, doc_count, len(term_freq), labels
 
-def setup_pass_ptc(cm, num_instances):
-  global __cm, __num_instances
-  __cm = cm
+def setup_pass_fm(num_instances, chunk_offsets):
+  global __num_instances, __chunk_offsets
   __num_instances = num_instances
+  __chunk_offsets = chunk_offsets
 
-def pass_ptc(b_dir):
+def pass_fm(b_dir):
   """
   Take a bucket, form a feature map, compute the count of
   each feature in each class.
   @param b_dir path to the bucket directory
   @returns (read_count, f_ids, prod) 
   """
-  global __cm, __num_instances
+  global __num_instances, __chunk_offsets
 
   terms = defaultdict(lambda : np.zeros((__num_instances,), dtype='int'))
 
   read_count = 0
   for path in os.listdir(b_dir):
     if path.endswith('.index'):
-      for f_id, doc_id, count in unmarshal_iter(os.path.join(b_dir, path)):
-        terms[f_id][doc_id] = count
+      for f_id, chunk_id, doc_id, count in unmarshal_iter(os.path.join(b_dir, path)):
+        index = doc_id + __chunk_offsets[chunk_id]
+        terms[f_id][index] = count
         read_count += 1
 
   f_ids, f_vs = zip(*terms.items())
   fm = np.vstack(f_vs)
-  prod = np.dot(fm, __cm)
-  return read_count, f_ids, prod
+  return read_count, f_ids, fm
 
-
-def learn_pc(cm):
+def learn_nb_params(items, num_langs, tk_nextmove, tk_output, temp_path, args):
   """
-  @param cm class map
-  @returns nb_pc: log(P(C))
+  @param items label, path pairs
   """
-  pc = np.log(cm.sum(0))
-  nb_pc = array.array('d', pc)
-  return nb_pc
-
-def generate_cm(items, num_classes):
-  """
-  @param items (class id, path) pairs
-  @param num_classes The number of classes present
-  """
-  num_instances = len(items)
-
-  # Generate the class map
-  cm = np.zeros((num_instances, num_classes), dtype='bool')
-  for docid, (lang_id, path) in enumerate(items):
-    cm[docid, lang_id] = True
-
-  return cm
-
-def learn_ptc(paths, tk_nextmove, tk_output, cm, temp_path, args):
   global b_dirs
-  num_instances = len(paths)
-  num_features = max( i for v in tk_output.values() for i in v) + 1
 
   # Generate the feature map
   nm_arr = mp.Array('i', tk_nextmove, lock=False)
 
   if args.jobs:
-    chunksize = min(len(paths) / (args.jobs*2), args.chunksize)
+    tasks = args.jobs * 2
   else:
-    chunksize = min(len(paths) / (mp.cpu_count()*2), args.chunksize)
+    tasks = mp.cpu_count() * 2
 
-  # TODO: Set the output dir
-  b_dirs = [ tempfile.mkdtemp(prefix="train-",suffix='-bucket', dir=temp_path) for i in range(args.buckets) ]
+  # Ensure chunksize of at least 1, but not exceeding specified chunksize
+  chunksize = max(1, min(len(items) / tasks, args.chunksize))
+
+  outdir = tempfile.mkdtemp(prefix="NBtrain-",suffix='-buckets', dir=temp_path)
+  b_dirs = [ os.path.join(outdir,"bucket{0}".format(i)) for i in range(args.buckets) ]
+
+  for d in b_dirs:
+    os.mkdir(d)
 
   output_states = set(tk_output)
   
-  path_chunks = list(chunk(paths, chunksize))
-  pass_tokenize_arg = zip(offsets(path_chunks), path_chunks)
+  # Divide all the items to be processed into chunks, and enumerate each chunk.
+  item_chunks = list(chunk(items, chunksize))
+  pass_tokenize_arg = enumerate(item_chunks)
   
-  pass_tokenize_params = (nm_arr, output_states, tk_output, b_dirs) 
+  pass_tokenize_params = (nm_arr, output_states, tk_output, b_dirs, args.line) 
   with MapPool(args.jobs, setup_pass_tokenize, pass_tokenize_params) as f:
     pass_tokenize_out = f(pass_tokenize, pass_tokenize_arg)
 
-  write_count = sum(pass_tokenize_out)
+  write_count = 0
+  chunk_sizes = {}
+  labels = []
+  for chunk_id, doc_count, writes, _labels in pass_tokenize_out:
+    write_count += writes
+    chunk_sizes[chunk_id] = doc_count
+    labels.extend(_labels)
+
   print "wrote a total of %d keys" % write_count
 
-  pass_ptc_params = (cm, num_instances)
-  with MapPool(args.jobs, setup_pass_ptc, pass_ptc_params) as f:
-    pass_ptc_out = f(pass_ptc, b_dirs)
+  num_instances = sum(chunk_sizes.values())
+  print "processed a total of %d instances" % num_instances
 
-  reads, ids, prods = zip(*pass_ptc_out)
+  chunk_offsets = {}
+  for i in range(len(chunk_sizes)):
+    chunk_offsets[i] = sum(chunk_sizes[x] for x in range(i))
+    print "  offset for chunk {0} is {1}".format(i, chunk_offsets[i])
+
+  pass_fm_params = (num_instances, chunk_offsets)
+  with MapPool(args.jobs, setup_pass_fm, pass_fm_params) as f:
+    pass_fm_out = f(pass_fm, b_dirs)
+
+  reads, ids, fms = zip(*pass_fm_out)
   read_count = sum(reads)
   print "read a total of %d keys (%d short)" % (read_count, write_count - read_count)
 
-  prod = np.zeros((num_features, cm.shape[1]), dtype=int)
-  prod[np.concatenate(ids)] = np.vstack(prods)
+  num_features = max( i for v in tk_output.values() for i in v) + 1
+  fm = np.zeros((num_features, num_instances), dtype=int)
+  fm[np.concatenate(ids)] = np.vstack(fms)
+
+  print "have {} labels".format(len(labels))
+  cm = np.zeros((num_instances, num_langs), dtype='bool')
+  for doc_id, lang_id in enumerate(labels):
+    cm[doc_id, lang_id] = True
+
+  # This is where the smoothing occurs
+  prod = np.dot(fm, cm)
   ptc = np.log(1 + prod) - np.log(num_features + prod.sum(0))
 
   nb_ptc = array.array('d')
   for term_dist in ptc.tolist():
     nb_ptc.extend(term_dist)
-  return nb_ptc
+
+  pc = np.log(cm.sum(0))
+  nb_pc = array.array('d', pc)
+
+  return nb_pc, nb_ptc
 
 @atexit.register
 def cleanup():
@@ -229,6 +250,7 @@ if __name__ == "__main__":
   parser.add_argument("model", metavar='MODEL_DIR', help="read index and produce output in MODEL_DIR")
   parser.add_argument("--chunksize", type=int, help='maximum chunk size (number of files)', default=MAX_CHUNK_SIZE)
   parser.add_argument("--buckets", type=int, metavar='N', help="distribute features into N buckets", default=NUM_BUCKETS)
+  parser.add_argument("--line", action="store_true", help="treat each line in a file as a document")
   args = parser.parse_args()
 
   if args.temp:
@@ -253,13 +275,15 @@ if __name__ == "__main__":
   print "model path:", args.model
   print "temp path:", temp_path
   print "scanner path:", scanner_path
-  #print "index path:", index_path
   print "output path:", output_path
+
+  if args.line:
+    print "treating each LINE as a document"
 
   # read list of training files
   with open(index_path) as f:
     reader = csv.reader(f)
-    items = [ (l,p) for _,l,p in reader ]
+    items = [ (int(l),p) for _,l,p in reader ]
 
   # read scanner
   with open(scanner_path) as f:
@@ -270,12 +294,8 @@ if __name__ == "__main__":
     reader = csv.reader(f)
     langs = zip(*reader)[0]
     
-  cm = generate_cm(items, len(langs))
-  paths = zip(*items)[1]
-
   nb_classes = langs
-  nb_pc = learn_pc(cm)
-  nb_ptc = learn_ptc(paths, tk_nextmove, tk_output, cm, temp_path, args)
+  nb_pc, nb_ptc = learn_nb_params(items, len(langs), tk_nextmove, tk_output, temp_path, args)
 
   # output the model
   model = nb_ptc, nb_pc, nb_classes, tk_nextmove, tk_output
