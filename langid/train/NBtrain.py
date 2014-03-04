@@ -153,7 +153,7 @@ def learn_nb_params(items, num_langs, tk_nextmove, tk_output, temp_path, args):
   """
   @param items label, path pairs
   """
-  global b_dirs
+  global outdir
 
   # Generate the feature map
   nm_arr = mp.Array('i', tk_nextmove, lock=False)
@@ -232,12 +232,10 @@ def learn_nb_params(items, num_langs, tk_nextmove, tk_output, temp_path, args):
 
 @atexit.register
 def cleanup():
-  global b_dirs
+  global outdir 
   try:
-    for d in b_dirs:
-      shutil.rmtree(d)
+    shutil.rmtree(outdir)
   except NameError:
-    # Failed before b_dirs is defined, nothing to clean
     pass
 
 if __name__ == "__main__":

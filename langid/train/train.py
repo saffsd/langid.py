@@ -54,7 +54,7 @@ from DFfeatureselect import tally, ngram_select
 from IGweight import compute_IG
 from LDfeatureselect import select_LD_features
 from scanner import build_scanner, Scanner
-from NBtrain import generate_cm, learn_pc, learn_ptc
+from NBtrain import learn_nb_params
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser()
@@ -77,6 +77,7 @@ if __name__ == "__main__":
   parser.add_argument("--feats_per_lang", type=int, metavar='N', help="select top N features for each language", default=FEATURES_PER_LANG)
   parser.add_argument("--no_domain_ig", action="store_true", default=False, help="use only per-langugage IG in LD calculation")
   parser.add_argument("--debug", action="store_true", default=False, help="produce debug output (all intermediates)")
+  parser.add_argument("--line", action="store_true", help="treat each line in a file as a document")
 
   group = parser.add_argument_group('sampling')
   group.add_argument("--sample_size", type=int, help="size of sample for sampling-based tokenization", default=140)
@@ -85,6 +86,9 @@ if __name__ == "__main__":
   parser.add_argument("corpus", help="read corpus from CORPUS_DIR", metavar="CORPUS_DIR")
 
   args = parser.parse_args()
+
+  if args.sample_count and args.line:
+    parser.error("sampling in line mode is not implemented")
 
   if args.df_feats and args.ld_feats:
     parser.error("--df_feats and --ld_feats are mutually exclusive")
@@ -97,16 +101,12 @@ if __name__ == "__main__":
 
   makedir(model_dir)
 
-  langs_path = os.path.join(model_dir, 'lang_index')
-  domains_path = os.path.join(model_dir, 'domain_index')
-  index_path = os.path.join(model_dir, 'paths')
-
   # display paths
   print "corpus path:", args.corpus
   print "model path:", model_dir
 
   indexer = CorpusIndexer(args.corpus, min_domain=args.min_domain, proportion=args.proportion,
-                          langs = args.lang, domains = args.domain)
+                          langs = args.lang, domains = args.domain, line_level=args.line)
 
   # Compute mappings between files, languages and domains
   lang_dist = indexer.dist_lang
@@ -119,10 +119,17 @@ if __name__ == "__main__":
   domain_info = ' '.join(("{0}({1})".format(k, domain_dist[v]) for k,v in domain_index.items()))
   print "domains({0}): {1}".format(len(domain_dist), domain_info)
 
-  print "identified {0} files".format(len(indexer.items))
+  print "identified {0} documents".format(len(indexer.items))
 
-  items = [ (d,l,p) for (d,l,n,p) in indexer.items ]
+  if args.line:
+  	print "treating each LINE as a document"
+
+  items = sorted(set( (d,l,p) for (d,l,n,p) in indexer.items ))
   if args.debug:
+    langs_path = os.path.join(model_dir, 'lang_index')
+    domains_path = os.path.join(model_dir, 'domain_index')
+    index_path = os.path.join(model_dir, 'paths')
+
     # output the language index
     with open(langs_path,'w') as f:
       writer = csv.writer(f)
@@ -146,8 +153,6 @@ if __name__ == "__main__":
     buckets_dir = os.path.join(model_dir, 'buckets')
   makedir(buckets_dir)
 
-  bucketlist_path = os.path.join(model_dir, 'bucketlist')
-  index_path = os.path.join(model_dir, 'paths')
 
   if args.ld_feats:
     # LD features are pre-specified. We are basically just building the NB model.
@@ -158,7 +163,7 @@ if __name__ == "__main__":
 
     # Tokenize
     DFfeats = None
-    print "will tokenize %d files" % len(items)
+    print "will tokenize %d documents" % len(items)
     # TODO: Custom tokenizer if doing custom first-pass features
     if args.df_feats:
       print "reading custom features from:", args.df_feats
@@ -173,10 +178,13 @@ if __name__ == "__main__":
       tk = NGramTokenizer(1, args.max_order)
     
     # First-pass tokenization, used to determine DF of features
-    b_dirs = build_index(items, tk, buckets_dir, args.buckets, args.jobs, args.chunksize, args.sample_count, args.sample_size)
+    tk_dir = os.path.join(buckets_dir, 'tokenize-pass1')
+    makedir(tk_dir)
+    b_dirs = build_index(items, tk, tk_dir, args.buckets, args.jobs, args.chunksize, args.sample_count, args.sample_size, args.line)
 
     if args.debug:
       # output the paths to the buckets
+      bucketlist_path = os.path.join(model_dir, 'bucketlist')
       with open(bucketlist_path,'w') as f:
         for d in b_dirs:
           f.write(d+'\n')
@@ -203,15 +211,17 @@ if __name__ == "__main__":
     # Dispose of the first-pass tokenize output as it is no longer 
     # needed.
     if not args.debug:
-      for b in b_dirs:
-        shutil.rmtree(b)
+      shutil.rmtree(tk_dir)
 
     # Second-pass tokenization to only obtain counts for the selected features.
     # As the first-pass set is typically much larger than the second pass, it often 
     # works out to be faster to retokenize the raw documents rather than iterate
     # over the first-pass counts.
     DF_scanner = Scanner(DFfeats)
-    b_dirs = build_index(items, DF_scanner, buckets_dir, args.buckets, args.jobs, args.chunksize)
+    df_dir = os.path.join(buckets_dir, 'tokenize-pass2')
+    makedir(df_dir)
+    b_dirs = build_index(items, DF_scanner, df_dir, args.buckets, args.jobs, args.chunksize)
+    b_dirs = [[d] for d in b_dirs]
 
     # Build vectors of domain and language distributions for use in IG calculation
     domain_dist_vec = numpy.array([ domain_dist[domain_index[d]]
@@ -262,12 +272,10 @@ if __name__ == "__main__":
   # Assemble the NB model
   langs = sorted(lang_index, key=lang_index.get)
 
-  cm = generate_cm([ (l,p) for d,l,p in items], len(langs))
-  paths = zip(*items)[2]
-
   nb_classes = langs
-  nb_pc = learn_pc(cm)
-  nb_ptc = learn_ptc(paths, tk_nextmove, tk_output, cm, buckets_dir, args)
+  nb_dir = os.path.join(buckets_dir, 'NBtrain')
+  makedir(nb_dir)
+  nb_pc, nb_ptc = learn_nb_params([(int(l),p) for _, l, p in items], len(langs), tk_nextmove, tk_output, nb_dir, args)
 
   # output the model
   output_path = os.path.join(model_dir, 'model')
@@ -279,8 +287,7 @@ if __name__ == "__main__":
 
   # remove buckets if debug is off. We don't generate buckets if ldfeats is supplied.
   if not args.debug and not args.ld_feats:
-    for b in b_dirs:
-      shutil.rmtree(b)
+    shutil.rmtree(df_dir)
     if not args.temp:
       # Do not remove the buckets dir if temp was supplied as we don't know
       # if we created it.
