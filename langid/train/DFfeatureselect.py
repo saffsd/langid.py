@@ -51,6 +51,7 @@ import numpy
 import cPickle
 import multiprocessing as mp
 import atexit
+import gzip
 from itertools import tee, imap, islice
 from collections import defaultdict
 from datetime import datetime
@@ -65,7 +66,7 @@ def pass_sum_df(bucket):
   """
   doc_count = defaultdict(int)
   count = 0
-  with open(os.path.join(bucket, "docfreq"),'wb') as docfreq:
+  with gzip.open(os.path.join(bucket, "docfreq"),'wb') as docfreq:
     for path in os.listdir(bucket):
       # We use the domain buckets as there are usually less domains
       if path.endswith('.domain'):
@@ -123,6 +124,7 @@ if __name__ == "__main__":
   parser.add_argument("--tokens", metavar='N', type=int, help="consider top N tokens")
   parser.add_argument("--max_order", type=int, help="highest n-gram order to use", default=MAX_NGRAM_ORDER)
   parser.add_argument("--doc_count", nargs='?', const=True, metavar='DOC_COUNT_PATH', help="output full mapping of feature->frequency to DOC_COUNT_PATH")
+  parser.add_argument("--bucketlist", help="read list of buckets from")
   parser.add_argument("model", metavar='MODEL_DIR', help="read index and produce output in MODEL_DIR")
   
   args = parser.parse_args()
@@ -139,7 +141,10 @@ if __name__ == "__main__":
   else:
     feature_path = os.path.join(args.model, 'DFfeats')
 
-  bucketlist_path = os.path.join(args.model, 'bucketlist')
+  if args.bucketlist:
+    bucketlist_path = args.bucketlist 
+  else:
+    bucketlist_path = os.path.join(args.model, 'bucketlist')
 
   # display paths
   print "buckets path:", bucketlist_path

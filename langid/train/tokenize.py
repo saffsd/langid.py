@@ -46,11 +46,11 @@ CHUNKSIZE = 50 # maximum size of chunk (number of files tokenized - less = less 
 import os, sys, argparse
 import csv
 import shutil
-import tempfile
 import marshal
 import multiprocessing as mp
 import random
 import atexit
+import gzip
 
 from itertools import tee 
 from collections import defaultdict, Counter
@@ -149,8 +149,8 @@ def pass_tokenize(chunk_items):
 
   # Output the counts to the relevant bucket files. 
   __procname = mp.current_process().name
-  b_freq_lang = [open(os.path.join(p,__procname+'.lang'),'a') for p in __b_dirs]
-  b_freq_domain = [open(os.path.join(p,__procname+'.domain'),'a') for p in __b_dirs]
+  b_freq_lang = [gzip.open(os.path.join(p,__procname+'.lang'),'a') for p in __b_dirs]
+  b_freq_domain = [gzip.open(os.path.join(p,__procname+'.domain'),'a') for p in __b_dirs]
 
   for term in term_lng_freq:
     bucket_index = hash(term) % len(b_freq_lang)
@@ -177,7 +177,10 @@ def build_index(items, tokenizer, outdir, buckets=NUM_BUCKETS, jobs=None, chunks
   if jobs is None:
     jobs = mp.cpu_count() + 4
 
-  b_dirs = [ tempfile.mkdtemp(prefix="tokenize-",suffix='-{0}'.format(tokenizer.__class__.__name__), dir=outdir) for i in range(buckets) ]
+  b_dirs = [ os.path.join(outdir,"bucket{0}".format(i)) for i in range(buckets) ]
+
+  for d in b_dirs:
+    os.mkdir(d)
 
   # PASS 1: Tokenize documents into sets of terms
    
@@ -219,6 +222,7 @@ if __name__ == "__main__":
   parser.add_argument("--chunksize", type=int, help="max chunk size (number of files to tokenize at a time - smaller should reduce memory use)", default=CHUNKSIZE)
   parser.add_argument("--term_freq", action='store_true', help="count term frequency (default is document frequency)")
   parser.add_argument("-t", "--temp", metavar='TEMP_DIR', help="store buckets in TEMP_DIR instead of in MODEL_DIR/buckets")
+  parser.add_argument("-o", "--output", help="write list of output buckets to OUTPUT")
   parser.add_argument("model", metavar='MODEL_DIR', help="read index and produce output in MODEL_DIR")
 
   group = parser.add_argument_group('sampling')
@@ -234,7 +238,7 @@ if __name__ == "__main__":
     buckets_dir = os.path.join(args.model, 'buckets')
   makedir(buckets_dir)
 
-  bucketlist_path = os.path.join(args.model, 'bucketlist')
+  bucketlist_path = args.output if args.output else os.path.join(args.model, 'bucketlist')
   index_path = os.path.join(args.model, 'paths')
 
   # display paths

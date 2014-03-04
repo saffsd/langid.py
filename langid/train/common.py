@@ -6,6 +6,8 @@ Marco Lui, January 2013
 
 from itertools import islice
 import marshal
+import tempfile
+import gzip
 
 class Enumerator(object):
   """
@@ -34,10 +36,12 @@ def unmarshal_iter(path):
   """
   Open a given path and yield an iterator over items unmarshalled from it.
   """
-  with open(path, 'rb') as f:
+  with gzip.open(path, 'rb') as f, tempfile.TemporaryFile() as t:
+    t.write(f.read())
+    t.seek(0)
     while True:
       try:
-        yield marshal.load(f)
+        yield marshal.load(t)
       except EOFError:
         break
 
@@ -50,15 +54,18 @@ def makedir(path):
       raise
 
 import csv
-def write_weights(weights, path):
+def write_weights(weights, path, sort_by_weight=False):
   w = dict(weights)
   with open(path, 'w') as f:
     writer = csv.writer(f)
-    try:
-      key_order = sorted(w, key=w.get, reverse=True)
-    except ValueError:
-      # Could not order keys by value, value is probably a vector.
-      # Order keys alphabetically in this case.
+    if sort_by_weight:
+      try:
+        key_order = sorted(w, key=w.get, reverse=True)
+      except ValueError:
+        # Could not order keys by value, value is probably a vector.
+        # Order keys alphabetically in this case.
+        key_order = sorted(w)
+    else:
       key_order = sorted(w)
 
     for k in key_order:
