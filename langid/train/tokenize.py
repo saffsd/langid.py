@@ -90,13 +90,14 @@ def cleanup():
     # Failed before globals defined, nothing to clean
     pass
 
-def setup_pass_tokenize(tokenizer, b_dirs, sample_count, sample_size, term_freq):
-  global __tokenizer, __b_dirs, __sample_count, __sample_size, __term_freq
+def setup_pass_tokenize(tokenizer, b_dirs, sample_count, sample_size, term_freq, line_level):
+  global __tokenizer, __b_dirs, __sample_count, __sample_size, __term_freq, __line_level
   __tokenizer = tokenizer
   __b_dirs = b_dirs
   __sample_count = sample_count
   __sample_size = sample_size
   __term_freq = term_freq
+  __line_level = line_level
 
 def pass_tokenize(chunk_items):
   """
@@ -108,7 +109,7 @@ def pass_tokenize(chunk_items):
   inversion setp, so that the counts are now grouped by term rather
   than by document.
   """
-  global __maxorder, __b_dirs, __extractor, __sample_count, __sample_size, __term_freq
+  global __maxorder, __b_dirs, __extractor, __sample_count, __sample_size, __term_freq, __line_level
   
   extractor = __tokenizer
   term_lng_freq = defaultdict(lambda: defaultdict(int))
@@ -125,6 +126,21 @@ def pass_tokenize(chunk_items):
         for offset in offsets:
           tokens = extractor(text[offset: offset+__sample_size])
           if args.__term_freq:
+            # Term Frequency
+            tokenset = Counter(tokens)
+          else:
+            # Document Frequency
+            tokenset = Counter(set(tokens))
+          for token, count in tokenset.iteritems():
+            term_lng_freq[token][lang_id] += count
+            term_dom_freq[token][domain_id] += count
+      elif:
+        # line-model - each line in a file should be interpreted as a document
+        for line in f:
+          # TODO TODO
+          raise NotImplementedError()
+          tokens = extractor(line)
+          if __term_freq:
             # Term Frequency
             tokenset = Counter(tokens)
           else:
@@ -165,7 +181,9 @@ def pass_tokenize(chunk_items):
 
   return len(term_lng_freq)
 
-def build_index(items, tokenizer, outdir, buckets=NUM_BUCKETS, jobs=None, chunksize=CHUNKSIZE, sample_count=None, sample_size=None, term_freq=False):
+def build_index(items, tokenizer, outdir, buckets=NUM_BUCKETS, 
+        jobs=None, chunksize=CHUNKSIZE, sample_count=None, 
+        sample_size=None, term_freq=False, line_level=False):
   """
   @param items a list of (domain, language, path) tuples
   """
@@ -188,7 +206,7 @@ def build_index(items, tokenizer, outdir, buckets=NUM_BUCKETS, jobs=None, chunks
   # will have 2 chunks
   chunk_size = max(1,min(len(items) / (jobs * 2), chunksize))
   item_chunks = list(chunk(items, chunk_size))
-  pass_tokenize_globals = (tokenizer, b_dirs, sample_count, sample_size, term_freq)
+  pass_tokenize_globals = (tokenizer, b_dirs, sample_count, sample_size, term_freq, line_level)
 
   with MapPool(jobs, setup_pass_tokenize, pass_tokenize_globals) as f:
     pass_tokenize_out = f(pass_tokenize, item_chunks)
@@ -223,6 +241,7 @@ if __name__ == "__main__":
   parser.add_argument("--term_freq", action='store_true', help="count term frequency (default is document frequency)")
   parser.add_argument("-t", "--temp", metavar='TEMP_DIR', help="store buckets in TEMP_DIR instead of in MODEL_DIR/buckets")
   parser.add_argument("-o", "--output", help="write list of output buckets to OUTPUT")
+  parser.add_argument("--line", action="store_true", help="treat each line in a file as a document")
   parser.add_argument("model", metavar='MODEL_DIR', help="read index and produce output in MODEL_DIR")
 
   group = parser.add_argument_group('sampling')
@@ -230,6 +249,9 @@ if __name__ == "__main__":
   group.add_argument("--sample_count", type=int, help="number of samples for sampling-based tokenization", default=None)
   
   args = parser.parse_args()
+
+  if args.sample_count and args.line:
+    parser.error("sampling in line mode is not implemented")
   
 
   if args.temp:
@@ -271,7 +293,7 @@ if __name__ == "__main__":
     print "counting term frequency"
   else:
     print "counting document frequency"
-  b_dirs = build_index(items, tokenizer, buckets_dir, args.buckets, args.jobs, args.chunksize, args.sample_count, args.sample_size, args.term_freq)
+  b_dirs = build_index(items, tokenizer, buckets_dir, args.buckets, args.jobs, args.chunksize, args.sample_count, args.sample_size, args.term_freq, args.line)
 
   # output the paths to the buckets
   with open(bucketlist_path,'w') as f:
