@@ -131,7 +131,7 @@ def pass_ptc(b_dir):
   read_count = 0
   for path in os.listdir(b_dir):
     if path.endswith('.index'):
-      for f_id, doc_id, count in unmarshal_iter(os.path.join(b_dir, path)):
+      for f_id, doc_id, count in unmarshal_iter(os.path.join(b_dir, path),do_gzip=False):
         terms[f_id][doc_id] = count
         read_count += 1
 
