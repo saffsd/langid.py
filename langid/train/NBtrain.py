@@ -121,19 +121,20 @@ def pass_tokenize(arg):
 
   return chunk_id, doc_count, len(term_freq), labels
 
-def setup_pass_fm(num_instances, chunk_offsets):
-  global __num_instances, __chunk_offsets
+def setup_pass_ptc(cm, num_instances, chunk_offsets):
+  global __cm, __num_instances, __chunk_offsets
+  __cm = cm
   __num_instances = num_instances
   __chunk_offsets = chunk_offsets
 
-def pass_fm(b_dir):
+def pass_ptc(b_dir):
   """
   Take a bucket, form a feature map, compute the count of
   each feature in each class.
   @param b_dir path to the bucket directory
   @returns (read_count, f_ids, prod) 
   """
-  global __num_instances, __chunk_offsets
+  global __cm, __num_instances, __chunk_offsets
 
   terms = defaultdict(lambda : np.zeros((__num_instances,), dtype='int'))
 
@@ -147,13 +148,19 @@ def pass_fm(b_dir):
 
   f_ids, f_vs = zip(*terms.items())
   fm = np.vstack(f_vs)
-  return read_count, f_ids, fm
+  # The calculation of the term-class distribution is done per-chunk rather
+  # than globally for memory efficiency reasons.
+  prod = np.dot(fm, __cm)
+
+  return read_count, f_ids, prod
 
 def learn_nb_params(items, num_langs, tk_nextmove, tk_output, temp_path, args):
   """
   @param items label, path pairs
   """
   global outdir
+
+  print "learning NB parameters on {} items".format(len(items))
 
   # Generate the feature map
   nm_arr = mp.Array('i', tk_nextmove, lock=False)
@@ -181,14 +188,17 @@ def learn_nb_params(items, num_langs, tk_nextmove, tk_output, temp_path, args):
   pass_tokenize_params = (nm_arr, output_states, tk_output, b_dirs, args.line) 
   with MapPool(args.jobs, setup_pass_tokenize, pass_tokenize_params) as f:
     pass_tokenize_out = f(pass_tokenize, pass_tokenize_arg)
-
+  
   write_count = 0
   chunk_sizes = {}
   labels = []
-  for chunk_id, doc_count, writes, _labels in pass_tokenize_out:
+  num_chunks = len(item_chunks)
+  print "about to tokenize {} chunks".format(num_chunks)
+  for i, (chunk_id, doc_count, writes, _labels) in enumerate(pass_tokenize_out):
     write_count += writes
     chunk_sizes[chunk_id] = doc_count
     labels.extend(_labels)
+    print "processed chunk (%d/%d) [%d keys]" % (i+1, num_chunks, writes)
 
   print "wrote a total of %d keys" % write_count
 
@@ -198,27 +208,30 @@ def learn_nb_params(items, num_langs, tk_nextmove, tk_output, temp_path, args):
   chunk_offsets = {}
   for i in range(len(chunk_sizes)):
     chunk_offsets[i] = sum(chunk_sizes[x] for x in range(i))
-    print "  offset for chunk {0} is {1}".format(i, chunk_offsets[i])
-
-  pass_fm_params = (num_instances, chunk_offsets)
-  with MapPool(args.jobs, setup_pass_fm, pass_fm_params) as f:
-    pass_fm_out = f(pass_fm, b_dirs)
-
-  reads, ids, fms = zip(*pass_fm_out)
-  read_count = sum(reads)
-  print "read a total of %d keys (%d short)" % (read_count, write_count - read_count)
-
-  num_features = max( i for v in tk_output.values() for i in v) + 1
-  fm = np.zeros((num_features, num_instances), dtype=int)
-  fm[np.concatenate(ids)] = np.vstack(fms)
 
   print "have {} labels".format(len(labels))
   cm = np.zeros((num_instances, num_langs), dtype='bool')
   for doc_id, lang_id in enumerate(labels):
     cm[doc_id, lang_id] = True
 
+  pass_ptc_params = (cm, num_instances, chunk_offsets)
+  with MapPool(args.jobs, setup_pass_ptc, pass_ptc_params) as f:
+    pass_ptc_out = f(pass_ptc, b_dirs)
+
+  def pass_ptc_progress():
+    for i,v in enumerate(pass_ptc_out):
+      yield v
+      print "processed chunk ({0}/{1})".format(i+1, len(b_dirs))
+
+  reads, ids, prods = zip(*pass_ptc_progress())
+  read_count = sum(reads)
+  print "read a total of %d keys (%d short)" % (read_count, write_count - read_count)
+
+  num_features = max( i for v in tk_output.values() for i in v) + 1
+  prod = np.zeros((num_features, cm.shape[1]), dtype=int)
+  prod[np.concatenate(ids)] = np.vstack(prods)
+
   # This is where the smoothing occurs
-  prod = np.dot(fm, cm)
   ptc = np.log(1 + prod) - np.log(num_features + prod.sum(0))
 
   nb_ptc = array.array('d')
