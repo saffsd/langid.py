@@ -51,6 +51,7 @@ import multiprocessing as mp
 import random
 import atexit
 import gzip
+import tempfile
 
 from itertools import tee 
 from collections import defaultdict, Counter
@@ -253,10 +254,14 @@ if __name__ == "__main__":
   
 
   if args.temp:
-    buckets_dir = args.temp
+    tmp_dir = args.temp
   else:
-    buckets_dir = os.path.join(args.model, 'buckets')
-  makedir(buckets_dir)
+    tmp_dir = os.path.join(args.model, 'buckets')
+  makedir(tmp_dir)
+
+  # We generate a new directory at each invocation, otherwise we run the 
+  # risk of conflicting with a previous run without warning.
+  buckets_dir = tempfile.mkdtemp(suffix='tokenize',dir=tmp_dir)
 
   bucketlist_path = args.output if args.output else os.path.join(args.model, 'bucketlist')
   index_path = os.path.join(args.model, 'paths')
