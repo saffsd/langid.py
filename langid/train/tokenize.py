@@ -110,7 +110,7 @@ def pass_tokenize(chunk_items):
   inversion setp, so that the counts are now grouped by term rather
   than by document.
   """
-  global __maxorder, __b_dirs, __extractor, __sample_count, __sample_size, __term_freq, __line_level
+  global __maxorder, __b_dirs, __tokenizer, __sample_count, __sample_size, __term_freq, __line_level
   
   extractor = __tokenizer
   term_lng_freq = defaultdict(lambda: defaultdict(int))
