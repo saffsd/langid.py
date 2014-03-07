@@ -183,22 +183,22 @@ def learn_nb_params(items, num_langs, tk_nextmove, tk_output, temp_path, args):
   
   # Divide all the items to be processed into chunks, and enumerate each chunk.
   item_chunks = list(chunk(items, chunksize))
-  pass_tokenize_arg = enumerate(item_chunks)
+  num_chunks = len(item_chunks)
+  print "about to tokenize {} chunks".format(num_chunks)
   
+  pass_tokenize_arg = enumerate(item_chunks)
   pass_tokenize_params = (nm_arr, output_states, tk_output, b_dirs, args.line) 
   with MapPool(args.jobs, setup_pass_tokenize, pass_tokenize_params) as f:
     pass_tokenize_out = f(pass_tokenize, pass_tokenize_arg)
   
-  write_count = 0
-  chunk_sizes = {}
-  labels = []
-  num_chunks = len(item_chunks)
-  print "about to tokenize {} chunks".format(num_chunks)
-  for i, (chunk_id, doc_count, writes, _labels) in enumerate(pass_tokenize_out):
-    write_count += writes
-    chunk_sizes[chunk_id] = doc_count
-    labels.extend(_labels)
-    print "processed chunk (%d/%d) [%d keys]" % (i+1, num_chunks, writes)
+    write_count = 0
+    chunk_sizes = {}
+    labels = []
+    for i, (chunk_id, doc_count, writes, _labels) in enumerate(pass_tokenize_out):
+      write_count += writes
+      chunk_sizes[chunk_id] = doc_count
+      labels.extend(_labels)
+      print "processed chunk (%d/%d) [%d keys]" % (i+1, num_chunks, writes)
 
   print "wrote a total of %d keys" % write_count
 
