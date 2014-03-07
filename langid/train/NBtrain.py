@@ -77,6 +77,10 @@ def pass_tokenize(arg):
   """
   Tokenize documents and do counts for each feature
   Split this into buckets chunked over features rather than documents
+
+  chunk_paths contains label, path pairs because we only know the
+  labels per-path, but in line mode there will be multiple documents
+  per path and we don't know how many those are.
   """
   global __output_states, __tk_output, __b_dirs, __line_level
   chunk_id, chunk_paths = arg
@@ -193,12 +197,12 @@ def learn_nb_params(items, num_langs, tk_nextmove, tk_output, temp_path, args):
   
     write_count = 0
     chunk_sizes = {}
-    labels = []
-    for i, (chunk_id, doc_count, writes, _labels) in enumerate(pass_tokenize_out):
+    chunk_labels = []
+    for i, (chunk_id, doc_count, writes, labels) in enumerate(pass_tokenize_out):
       write_count += writes
       chunk_sizes[chunk_id] = doc_count
-      labels.extend(_labels)
-      print "processed chunk (%d/%d) [%d keys]" % (i+1, num_chunks, writes)
+      chunk_labels.append((chunk_id, labels))
+      print "processed chunk ID:{0} ({1}/{2}) [{3} keys]".format(chunk_id, i+1, num_chunks, writes)
 
   print "wrote a total of %d keys" % write_count
 
@@ -209,23 +213,25 @@ def learn_nb_params(items, num_langs, tk_nextmove, tk_output, temp_path, args):
   for i in range(len(chunk_sizes)):
     chunk_offsets[i] = sum(chunk_sizes[x] for x in range(i))
 
-  print "have {} labels".format(len(labels))
+  # Build CM based on re-ordeing chunk
   cm = np.zeros((num_instances, num_langs), dtype='bool')
-  for doc_id, lang_id in enumerate(labels):
-    cm[doc_id, lang_id] = True
+  for chunk_id, chunk_label in chunk_labels:
+    for doc_id, lang_id in enumerate(chunk_label):
+      index = doc_id + chunk_offsets[chunk_id]
+      cm[doc_id, lang_id] = True
 
   pass_ptc_params = (cm, num_instances, chunk_offsets)
   with MapPool(args.jobs, setup_pass_ptc, pass_ptc_params) as f:
     pass_ptc_out = f(pass_ptc, b_dirs)
 
-  def pass_ptc_progress():
-    for i,v in enumerate(pass_ptc_out):
-      yield v
-      print "processed chunk ({0}/{1})".format(i+1, len(b_dirs))
+    def pass_ptc_progress():
+      for i,v in enumerate(pass_ptc_out):
+        yield v
+        print "processed chunk ({0}/{1})".format(i+1, len(b_dirs))
 
-  reads, ids, prods = zip(*pass_ptc_progress())
-  read_count = sum(reads)
-  print "read a total of %d keys (%d short)" % (read_count, write_count - read_count)
+    reads, ids, prods = zip(*pass_ptc_progress())
+    read_count = sum(reads)
+    print "read a total of %d keys (%d short)" % (read_count, write_count - read_count)
 
   num_features = max( i for v in tk_output.values() for i in v) + 1
   prod = np.zeros((num_features, cm.shape[1]), dtype=int)
