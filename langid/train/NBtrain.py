@@ -218,7 +218,7 @@ def learn_nb_params(items, num_langs, tk_nextmove, tk_output, temp_path, args):
   for chunk_id, chunk_label in chunk_labels:
     for doc_id, lang_id in enumerate(chunk_label):
       index = doc_id + chunk_offsets[chunk_id]
-      cm[doc_id, lang_id] = True
+      cm[index, lang_id] = True
 
   pass_ptc_params = (cm, num_instances, chunk_offsets)
   with MapPool(args.jobs, setup_pass_ptc, pass_ptc_params) as f:
