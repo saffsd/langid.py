@@ -80,6 +80,29 @@ class NGramTokenizer(object):
       for b in xrange(min_order, max_order-a):
         yield token[a:a+b]
 
+class WordNGramTokenizer(object):
+  def __init__(self, min_order=1, max_order=3):
+    self.min_order = min_order
+    self.max_order = max_order
+
+  def __call__(self, seq):
+    _seq = str.split(seq)
+    min_order = self.min_order
+    max_order = self.max_order
+    t = tee(_seq, max_order)
+    for i in xrange(max_order):
+      for j in xrange(i):
+        # advance iterators, ignoring result
+        t[i].next()
+    while True:
+      token = [tn.next() for tn in t]
+      if len(token) < max_order: break
+      for n in xrange(min_order-1, max_order):
+        yield ' '.join(token[:n+1])
+    for a in xrange(max_order-1):
+      for b in xrange(min_order, max_order-a):
+        yield ' '.join(token[a:a+b])
+
 @atexit.register
 def cleanup():
   global b_dirs, complete
@@ -236,6 +259,7 @@ if __name__ == "__main__":
   parser.add_argument("--min_order", type=int, help="lowest n-gram order to use")
   parser.add_argument("--max_order", type=int, help="highest n-gram order to use")
   parser.add_argument("--word", action='store_true', default=False, help="use 'word' tokenization (currently str.split)")
+  parser.add_argument("--wordn", action='store_true', default=False, help="use 'word' n-gram tokenization")
   parser.add_argument("--chunksize", type=int, help="max chunk size (number of files to tokenize at a time - smaller should reduce memory use)", default=CHUNKSIZE)
   parser.add_argument("--term_freq", action='store_true', help="count term frequency (default is document frequency)")
   parser.add_argument("-t", "--temp", metavar='TEMP_DIR', help="store buckets in TEMP_DIR instead of in MODEL_DIR/buckets")
@@ -278,8 +302,8 @@ if __name__ == "__main__":
     reader = csv.reader(f)
     items = list(reader)
 
-  if sum(map(bool,(args.scanner, args.max_order, args.word))) > 1:
-    parser.error('can only specify one of --word, --scanner and --max_order')
+  if sum(map(bool,(args.scanner, args.wordn, args.word))) > 1:
+    parser.error('can only specify one of --word, --wordn, --scanner') 
 
   # Tokenize
   print "will tokenize %d files" % len(items)
@@ -290,6 +314,11 @@ if __name__ == "__main__":
   elif args.word:
     tokenizer = str.split
     print "using str.split to tokenize"
+  elif args.wordn:
+    min_order = args.min_order if args.min_order else MIN_NGRAM_ORDER
+    max_order = args.max_order if args.max_order else MAX_NGRAM_ORDER
+    tokenizer = WordNGramTokenizer(min_order,max_order)
+    print "using WORD n-gram tokenizer: min_order({0}) max_order({1})".format(min_order,max_order)
   else:
     min_order = args.min_order if args.min_order else MIN_NGRAM_ORDER
     max_order = args.max_order if args.max_order else MAX_NGRAM_ORDER
