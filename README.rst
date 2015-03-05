@@ -15,7 +15,10 @@ The design principles are as follows:
 4. Single .py file with minimal dependencies
 5. Deployable as a web service
 
-All that is required to run ``langid.py`` is >= Python 2.5 and numpy.  
+All that is required to run ``langid.py`` is >= Python 2.7 and numpy.  
+The main script ``langid/langid.py`` is cross-compatible with both Python2 and
+Python3, but the accompanying training tools are still Python2-only.
+
 ``langid.py`` is WSGI-compliant.  ``langid.py`` will use ``fapws3`` as a web server if 
 available, and default to ``wsgiref.simple_server`` otherwise.
 
