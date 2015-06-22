@@ -8,7 +8,17 @@ setup(name='langid',
       description="langid.py is a standalone Language Identification (LangID) tool.",
       long_description="""\
 """,
-      classifiers=[], # Get strings from http://pypi.python.org/pypi?%3Aaction=list_classifiers
+      classifiers=[
+          'Programming Language :: Python :: 2',
+          'Programming Language :: Python :: 2.7',
+          'Programming Language :: Python :: 3',
+          'Development Status :: 5 - Production/Stable',
+          'Intended Audience :: Developers',
+          'Intended Audience :: Science/Research',
+          'Topic :: Scientific/Engineering :: Artificial Intelligence',
+          'Topic :: Text Processing :: Linguistic',
+          'License :: OSI Approved :: BSD License',
+      ],
       keywords='language detection',
       author='Marco Lui',
       author_email='saffsd@gmail.com',
