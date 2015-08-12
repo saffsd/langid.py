@@ -307,7 +307,9 @@ It is also possible to edit ``langid.py`` directly to embed the new model string
 Read more
 ---------
 ``langid.py`` is based on our published research. [1] describes the LD feature selection technique in detail,
-and [2] provides more detail about the module ``langid.py`` itself.
+and [2] provides more detail about the module ``langid.py`` itself. [3] compares the speed of ``langid.py``
+to Google's Chrome CLD2, as well as my own pure-C implementation and the authors' implementation on specialized
+hardware.
 
 [1] Lui, Marco and Timothy Baldwin (2011) Cross-domain Feature Selection for Language Identification, 
 In Proceedings of the Fifth International Joint Conference on Natural Language Processing (IJCNLP 2011), 
@@ -316,6 +318,11 @@ Chiang Mai, Thailand, pp. 553—561. Available from http://www.aclweb.org/anthol
 [2] Lui, Marco and Timothy Baldwin (2012) langid.py: An Off-the-shelf Language Identification Tool, 
 In Proceedings of the 50th Annual Meeting of the Association for Computational Linguistics (ACL 2012), 
 Demo Session, Jeju, Republic of Korea. Available from www.aclweb.org/anthology/P12-3005
+
+[3] Kenneth Heafield and Rohan Kshirsagar and Santiago Barona (2015) Language Identification and Modeling in Specialized Hardware,
+In Proceedings of the 53rd Annual Meeting of the Association for Computational Linguistics and the 7th International Joint 
+Conference on Natural Language Processing (Volume 2: Short Papers).
+Available from http://aclweb.org/anthology/P15-2063
 
 Contact
 -------
@@ -329,11 +336,19 @@ any shortcomings you may have found.
 Acknowledgements
 ----------------
 Thanks to aitzol for help with packaging ``langid.py`` for PyPI.
+Thanks to pquentin for suggestions and improvements to packaging.
 
 Related Implementations
 -----------------------
-Dawid Weiss has ported langid.py to Java, with a particular focus on
+Dawid Weiss has ported ``langid.py`` to Java, with a particular focus on
 speed and memory use. Available from https://github.com/carrotsearch/langid-java
+
+I have written a Pure-C version of ``langid.py``, which an external evaluation (see `Read more`)
+has found to be up to 20x as fast as the pure Python implementation here. 
+Available from https://github.com/saffsd/langid.c
+
+I have also written a JavaScript version of ``langid.py`` which runs entirely in the browser.
+Available from https://github.com/saffsd/langid.js
 
 Changelog
 ---------
@@ -351,3 +366,7 @@ v1.1.3:
 
 v1.1.4:
   * Added set_languages to __init__.py, fixing #10 (and properly fixing #8)
+
+v1.1.5:
+  * remove dev tag
+  * add PyPi classifiers, fixing #34 (thanks to pquentin)
