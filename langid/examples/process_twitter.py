@@ -16,6 +16,27 @@ import sys
 import langid
 import json
 import optparse
+import re
+
+import _twokenize
+
+
+to_clean = re.compile(_twokenize.regex_or(
+  _twokenize.Hearts,
+  _twokenize.url,
+  _twokenize.Email,
+  _twokenize.emoticon,
+  _twokenize.Arrows,
+  _twokenize.entity,
+  _twokenize.decorations,
+  _twokenize.Hashtag,
+  _twokenize.AtMention,
+).decode('utf8'), re.UNICODE)
+
+
+def clean_tweet(text):
+  return to_clean.sub('', text)
+
 
 if __name__ == "__main__":
   parser = optparse.OptionParser()
@@ -30,7 +51,7 @@ if __name__ == "__main__":
       if j.get('retweet_count') == 0:
         text = j.get('text')
         if text:
-          lang, conf = langid.classify(text)
+          lang, conf = langid.classify(clean_tweet(text))
           if lang_set is None or lang in lang_set:
             print "{0}: {1}".format(lang, text.encode('utf8'))
   except (IOError, KeyboardInterrupt):
