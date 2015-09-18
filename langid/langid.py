@@ -604,7 +604,7 @@ def main():
     else:
       # Redirected
       if options.line:
-        for line in sys.stdin.readlines():
+        for line in sys.stdin:
           print(_process(line))
       else:
         print(_process(sys.stdin.read()))
