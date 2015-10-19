@@ -1,6 +1,8 @@
 #!/usr/bin/env python
+from __future__ import print_function
+
 """
-tokenize.py - 
+tokenize.py -
 Tokenizer for langid.py training system. This takes a list of files and tokenizes them
 in parallel.
 
@@ -51,7 +53,7 @@ import multiprocessing as mp
 import random
 import atexit
 
-from itertools import tee 
+from itertools import tee
 from collections import defaultdict
 
 from common import makedir, chunk, MapPool
@@ -102,7 +104,7 @@ def pass_tokenize(chunk_items):
   and simultaneously build a term->df count.
   The term->df counts are redistributed to
   buckets via python's in-built hash function.
-  This is basically an inversion step, so that 
+  This is basically an inversion step, so that
   now we are chunked on the term axis rather
   than the document axis.
   """
@@ -110,7 +112,7 @@ def pass_tokenize(chunk_items):
   __procname = mp.current_process().name
   b_freq_lang = [tempfile.mkstemp(prefix=__procname+'-', suffix='.lang', dir=p)[0] for p in __b_dirs]
   b_freq_domain = [tempfile.mkstemp(prefix=__procname+'-', suffix='.domain', dir=p)[0] for p in __b_dirs]
-  
+
   extractor = __tokenizer
   term_lng_freq = defaultdict(lambda: defaultdict(int))
   term_dom_freq = defaultdict(lambda: defaultdict(int))
@@ -128,7 +130,7 @@ def pass_tokenize(chunk_items):
           for token in tokenset:
             term_lng_freq[token][lang_id] += 1
             term_dom_freq[token][domain_id] += 1
-          
+
       else:
         # whole-document tokenization
         tokenset = set(extractor(f.read()))
@@ -156,7 +158,7 @@ def build_index(items, tokenizer, outdir, buckets=NUM_BUCKETS, jobs=None, chunks
   global b_dirs, complete
 
   # Our exitfunc uses this to know whether to delete the tokenized files
-  complete = False 
+  complete = False
 
   if jobs is None:
     jobs = mp.cpu_count() + 4
@@ -164,7 +166,7 @@ def build_index(items, tokenizer, outdir, buckets=NUM_BUCKETS, jobs=None, chunks
   b_dirs = [ tempfile.mkdtemp(prefix="tokenize-",suffix='-{0}'.format(tokenizer.__class__.__name__), dir=outdir) for i in range(buckets) ]
 
   # PASS 1: Tokenize documents into sets of terms
-   
+
   # If there are few items, make the chunk size such that each job
   # will have 2 chunks
   chunk_size = max(1,min(len(items) / (jobs * 2), chunksize))
@@ -177,16 +179,16 @@ def build_index(items, tokenizer, outdir, buckets=NUM_BUCKETS, jobs=None, chunks
 
     doc_count = defaultdict(int)
     chunk_count = len(item_chunks)
-    print "chunk size: {0} ({1} chunks)".format(chunk_size, chunk_count)
-    print "job count: {0}".format(jobs)
+    print("chunk size: {0} ({1} chunks)".format(chunk_size, chunk_count))
+    print("job count: {0}".format(jobs))
 
     if sample_count:
-      print "sampling-based tokenization: size {0} count {1}".format(sample_size, sample_count)
+      print("sampling-based tokenization: size {0} count {1}".format(sample_size, sample_count))
     else:
-      print "whole-document tokenization"
+      print("whole-document tokenization")
 
     for i, keycount in enumerate(pass_tokenize_out):
-      print "tokenized chunk (%d/%d) [%d keys]" % (i+1,chunk_count, keycount)
+      print("tokenized chunk (%d/%d) [%d keys]" % (i+1,chunk_count, keycount))
 
   complete = True
 
@@ -206,9 +208,9 @@ if __name__ == "__main__":
   group = parser.add_argument_group('sampling')
   group.add_argument("--sample_size", type=int, help="size of sample for sampling-based tokenization", default=140)
   group.add_argument("--sample_count", type=int, help="number of samples for sampling-based tokenization", default=None)
-  
+
   args = parser.parse_args()
-  
+
 
   if args.temp:
     buckets_dir = args.temp
@@ -220,9 +222,9 @@ if __name__ == "__main__":
   index_path = os.path.join(args.model, 'paths')
 
   # display paths
-  print "index path:", index_path
-  print "bucketlist path:", bucketlist_path
-  print "buckets path:", buckets_dir
+  print("index path:", index_path)
+  print("bucketlist path:", bucketlist_path)
+  print("buckets path:", buckets_dir)
 
   with open(index_path) as f:
     reader = csv.reader(f)
@@ -232,18 +234,18 @@ if __name__ == "__main__":
     parser.error('can only specify one of --word, --scanner and --max_order')
 
   # Tokenize
-  print "will tokenize %d files" % len(items)
+  print("will tokenize %d files" % len(items))
   if args.scanner:
     from scanner import Scanner
     tokenizer = Scanner.from_file(args.scanner)
-    print "using provided scanner: ", args.scanner
+    print("using provided scanner: ", args.scanner)
   elif args.word:
     tokenizer = str.split
-    print "using str.split to tokenize"
+    print("using str.split to tokenize")
   else:
     max_order = args.max_order if args.max_order else MAX_NGRAM_ORDER
     tokenizer = NGramTokenizer(1,max_order)
-    print "using n-gram tokenizer: max_order({0})".format(max_order)
+    print("using n-gram tokenizer: max_order({0})".format(max_order))
   b_dirs = build_index(items, tokenizer, buckets_dir, args.buckets, args.jobs, args.chunksize, args.sample_count, args.sample_size)
 
   # output the paths to the buckets

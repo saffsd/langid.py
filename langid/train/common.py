@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+from __future__ import print_function
 """
 Common functions
 
@@ -9,7 +11,7 @@ import marshal
 
 class Enumerator(object):
   """
-  Enumerator object. Returns a larger number each call. 
+  Enumerator object. Returns a larger number each call.
   Can be used with defaultdict to enumerate a sequence of items.
   """
   def __init__(self, start=0):
@@ -99,7 +101,7 @@ def write_features(features, path):
   """
   with open(path,'w') as f:
     for feat in features:
-      print >>f, repr(feat)
+      print(repr(feat),file=f)
 
 
 def index(seq):
@@ -111,7 +113,7 @@ def index(seq):
   """
   return dict((k,v) for (v,k) in enumerate(seq))
 
-      
+
 
 from itertools import imap
 from contextlib import contextmanager, closing

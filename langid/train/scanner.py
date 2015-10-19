@@ -1,9 +1,11 @@
 #!/usr/bin/env python
+from __future__ import print_function
+
 """
-scanner.py - 
+scanner.py -
 Assemble a "feature scanner" using Aho-Corasick string matching.
-This takes a list of features (byte sequences) and builds a DFA 
-that when run on a byte stream can identify how often each of 
+This takes a list of features (byte sequences) and builds a DFA
+that when run on a byte stream can identify how often each of
 the features is present in a single pass over the stream.
 
 Marco Lui, January 2013
@@ -36,7 +38,7 @@ or implied, of the copyright holder.
 """
 
 import cPickle
-import os, sys, argparse 
+import os, sys, argparse
 import array
 from collections import deque, defaultdict
 from common import read_features
@@ -65,7 +67,7 @@ class Scanner(object):
     scanner = cls.__new__(cls)
     scanner.__setstate__((tk_nextmove, tk_output_f))
     return scanner
-    
+
   def __init__(self, keywords):
     self.build(keywords)
 
@@ -92,7 +94,7 @@ class Scanner(object):
         state = newstate
       output[state].add(a)
     for a in self.alphabet:
-      if (0,a) not in goto: 
+      if (0,a) not in goto:
         goto[(0,a)] = 0
 
     # Algorithm 3
@@ -167,7 +169,7 @@ class Scanner(object):
     for i, next_state in enumerate(nm_array):
       state = i / 256
       letter = chr(i % 256)
-      self.nextmove[(state, letter)] = next_state 
+      self.nextmove[(state, letter)] = next_state
 
   def search(self, string):
     state = 0
@@ -190,7 +192,7 @@ def build_scanner(features):
   feat_index = index(features)
 
   # Build the actual scanner
-  print "building scanner"
+  print("building scanner")
   scanner = Scanner(features)
   tk_nextmove, raw_output = scanner.__getstate__()
 
@@ -228,8 +230,8 @@ if __name__ == "__main__":
     output_path = input_path + '.scanner'
 
   # display paths
-  print "input path:", input_path
-  print "output path:", output_path
+  print("input path:", input_path)
+  print("output path:", output_path)
 
   nb_features = read_features(input_path)
   tk_nextmove, tk_output = build_scanner(nb_features)
@@ -237,4 +239,4 @@ if __name__ == "__main__":
 
   with open(output_path, 'w') as f:
     cPickle.dump(scanner, f)
-  print "wrote scanner to {0}".format(output_path)
+  print("wrote scanner to {0}".format(output_path))
