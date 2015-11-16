@@ -42,10 +42,11 @@ except NameError:
 HOST = None #leave as none for auto-detect
 PORT = 9008
 FORCE_WSGIREF = False
-NORM_PROBS = True # Normalize output probabilities.
+NORM_PROBS = False # Normalize output probabilities.
 
-# NORM_PROBS can be set to False for a small speed increase. It does not
-# affect the relative ordering of the predicted classes. 
+# NORM_PROBS defaults to False for a small speed increase. It does not
+# affect the relative ordering of the predicted classes. It can be 
+# re-enabled at runtime - see the readme.
 
 import base64
 import bz2

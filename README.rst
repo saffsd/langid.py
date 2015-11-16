@@ -71,24 +71,29 @@ Options:
 The simplest way to use ``langid.py`` is as a command-line tool, and you can 
 invoke using ``python langid.py``. If you installed ``langid.py`` as a Python 
 module (e.g. via ``pip install langid``), you can invoke ``langid`` instead of 
-``python langid.py`` (the two are equivalent).  This will cause a prompt to 
+``python langid.py -n`` (the two are equivalent).  This will cause a prompt to 
 display. Enter text to identify, and hit enter::
 
   >>> This is a test
-  ('en', 0.99999999099035441)
+  ('en', -54.41310358047485)
   >>> Questa e una prova
-  ('it', 0.98569847366134222)
+  ('it', -35.41771221160889)
+
 
 ``langid.py`` can also detect when the input is redirected (only tested under Linux), and in this
 case will process until EOF rather than until newline like in interactive mode::
 
-  python langid.py < readme.rst 
+  python langid.py < README.rst 
+  ('en', -22552.496054649353)
+
+
+The value returned is the unnormalized probability estimate for the language. Calculating 
+the exact probability estimate is disabled by default, but can be enabled through a flag::
+
+  python langid.py -n < README.rst 
   ('en', 1.0)
 
-The value returned is the probability estimate for the language. Calculating 
-the exact probability estimate is not actually necessary for classification, 
-and can be disabled for a slight performance boost. More details are provided
-in the section on `Probability Normalization`.
+More details are provided in this README in the section on `Probability Normalization`.
 
 You can also use ``langid.py`` as a Python library::
 
@@ -98,7 +103,7 @@ You can also use ``langid.py`` as a Python library::
   Type "help", "copyright", "credits" or "license" for more information.
   >>> import langid
   >>> langid.classify("This is a test")
-  ('en', 0.99999999099035441)
+  ('en', -54.41310358047485)
   
 Finally, ``langid.py`` can use Python's built-in ``wsgiref.simple_server`` (or ``fapws3`` if available) to
 provide language identification as a web service. To do this, launch ``python langid.py -s``, and
@@ -107,12 +112,12 @@ with no data, a simple HTML forms interface is displayed.
 
 The response is generated in JSON, here is an example::
 
-  {"responseData": {"confidence": 0.99999999099035441, "language": "en"}, "responseDetails": null, "responseStatus": 200}
+  {"responseData": {"confidence": -54.41310358047485, "language": "en"}, "responseDetails": null, "responseStatus": 200}
 
 A utility such as curl can be used to access the web service::
 
   # curl -d "q=This is a test" localhost:9008/detect
-  {"responseData": {"confidence": 0.99999999099035441, "language": "en"}, "responseDetails": null, "responseStatus": 200}
+  {"responseData": {"confidence": -54.41310358047485, "language": "en"}, "responseDetails": null, "responseStatus": 200}
 
 You can also use HTTP PUT::
 
@@ -120,22 +125,22 @@ You can also use HTTP PUT::
     % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
                                  Dload  Upload   Total   Spent    Left  Speed
   100  2871  100   119  100  2752    117   2723  0:00:01  0:00:01 --:--:--  2727
-  {"responseData": {"confidence": 1.0, "language": "en"}, "responseDetails": null, "responseStatus": 200}
+  {"responseData": {"confidence": -22552.496054649353, "language": "en"}, "responseDetails": null, "responseStatus": 200}
 
 If no "q=XXX" key-value pair is present in the HTTP POST payload, ``langid.py`` will interpret the entire
 file as a single query. This allows for redirection via curl::
 
   # echo "This is a test" | curl -d @- localhost:9008/detect
-  {"responseData": {"confidence": 0.99999999099035441, "language": "en"}, "responseDetails": null, "responseStatus": 200}
+  {"responseData": {"confidence": -54.41310358047485, "language": "en"}, "responseDetails": null, "responseStatus": 200}
 
 ``langid.py`` will attempt to discover the host IP address automatically. Often, this is set to localhost(127.0.1.1), even 
 though the machine has a different external IP address. ``langid.py`` can attempt to automatically discover the external
 IP address. To enable this functionality, start ``langid.py`` with the ``-r`` flag.
 
 ``langid.py`` supports constraining of the output language set using the ``-l`` flag and a comma-separated list of ISO639-1 
-language codes::
+language codes (the ``-n`` flag enables probability normalization)::
 
-  # python langid.py -l it,fr
+  # python langid.py -n -l it,fr
   >>> Io non parlo italiano
   ('it', 0.99999999988965627)
   >>> Je ne parle pas français
@@ -184,15 +189,15 @@ of candidate languages. However, users sometimes find it helpful to have a "conf
 score for the probability prediction. Thus, ``langid.py`` implements a re-normalization
 that produces an output in the 0-1 range.
 
-For command-line usages of ``langid.py``, the default behaviour is to disable
-probability normalization. It can be enabled by passing the ``-n`` flag. For
-library use, the default behaviour is to enable it. To disable it, the user
-must instantiate their own ``LanguageIdentifier``. An example of such usage is as follows::
+``langid.py`` disables probability normalization by default. For
+command-line usages of ``langid.py``, it can be enabled by passing the ``-n`` flag. For
+probability normalization in library use, the user must instantiate their own 
+``LanguageIdentifier``. An example of such usage is as follows::
   
   >> from langid.langid import LanguageIdentifier, model
-  >> identifier = LanguageIdentifier.from_modelstring(model, norm_probs=False)
+  >> identifier = LanguageIdentifier.from_modelstring(model, norm_probs=True)
   >> identifier.classify("This is a test")
-  ('en', -54.41310358047485)
+  ('en', 0.9999999909903544)
 
 
 Training a model
