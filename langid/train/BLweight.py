@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+from __future__ import print_function
 """
 Implementing the "blacklist" feature weighting metric proposed by
 Tiedemann & Ljubesic.
@@ -81,11 +83,11 @@ if __name__ == "__main__":
   langs = sorted(all_langs)
 
   # display paths
-  print "languages({1}): {0}".format(langs, len(langs))
-  print "model path:", model_dir
-  print "feature path:", feat_path
-  print "output path:", out_dir
-  print "temp (buckets) path:", buckets_dir
+  print("languages({1}): {0}".format(langs, len(langs)))
+  print("model path:", model_dir)
+  print("feature path:", feat_path)
+  print("output path:", out_dir)
+  print("temp (buckets) path:", buckets_dir)
 
   feats = read_features(feat_path)
 
@@ -94,7 +96,7 @@ if __name__ == "__main__":
   if len(items) == 0:
     raise ValueError("found no files!")
 
-  print "will process {0} features across {1} paths".format(len(feats), len(items))
+  print("will process {0} features across {1} paths".format(len(feats), len(items)))
 
   # produce a scanner over all the features
   tk_nextmove, tk_output = build_scanner(feats)
@@ -103,13 +105,13 @@ if __name__ == "__main__":
   cm = generate_cm([ (l,p) for d,l,p in items], len(langs))
 
   # Compute P(t|C)
-  print "learning P(t|C)"
+  print("learning P(t|C)")
   paths = zip(*items)[2]
   nb_ptc = learn_ptc(paths, tk_nextmove, tk_output, cm, buckets_dir, args)
   nb_ptc = np.array(nb_ptc).reshape(len(feats), len(langs))
 
   # Normalize to 1 on the term axis
-  print "renormalizing P(t|C)"
+  print("renormalizing P(t|C)")
   for i in range(nb_ptc.shape[1]):
     # had to de-vectorize this due to memory consumption
     newval = np.empty_like(nb_ptc[:,i])
@@ -118,7 +120,7 @@ if __name__ == "__main__":
     nb_ptc[:,i] = newval
     assert (1.0 - newval.sum()) < 0.0001
 
-  print "doing per-pair output"
+  print("doing per-pair output")
   for lang1, lang2 in pairs:
     # Where to do output
     if args.no_norm:
@@ -131,4 +133,4 @@ if __name__ == "__main__":
 
     w = dict(zip(feats, np.abs((nb_ptc[:,i1] - nb_ptc[:,i2]) / (nb_ptc.sum(1) if not args.no_norm else 1))))
     write_weights(w, weights_path)
-    print "wrote weights to {0}".format(weights_path)
+    print("wrote weights to {0}".format(weights_path))

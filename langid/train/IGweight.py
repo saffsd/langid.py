@@ -1,6 +1,8 @@
 #!/usr/bin/env python
+from __future__ import print_function
+
 """
-IGWeight.py - 
+IGWeight.py -
 Compute IG Weights given a set of tokenized buckets and a feature set
 
 Marco Lui, January 2013
@@ -34,7 +36,7 @@ authors and should not be interpreted as representing official policies, either 
 or implied, of the copyright holder.
 """
 
-import os, sys, argparse 
+import os, sys, argparse
 import csv
 import numpy
 import multiprocessing as mp
@@ -42,11 +44,11 @@ from itertools import tee, imap, islice
 from collections import defaultdict
 from contextlib import closing
 
-from common import unmarshal_iter, MapPool, Enumerator, write_weights, read_features 
+from common import unmarshal_iter, MapPool, Enumerator, write_weights, read_features
 
 def entropy(v, axis=0):
   """
-  Optimized implementation of entropy. This version is faster than that in 
+  Optimized implementation of entropy. This version is faster than that in
   scipy.stats.distributions, particularly over long vectors.
   """
   v = numpy.array(v, dtype='float')
@@ -78,9 +80,9 @@ def setup_pass_IG(features, dist, binarize, suffix):
 
 def pass_IG(bucket):
   """
-  In this pass we compute the information gain for each feature, binarized 
-  with respect to each language as well as unified over the set of all 
-  classes. 
+  In this pass we compute the information gain for each feature, binarized
+  with respect to each language as well as unified over the set of all
+  classes.
 
   @global __features the list of features to compute IG for
   @global __dist the background distribution
@@ -89,7 +91,7 @@ def pass_IG(bucket):
   @param bucket the bucket file to process. It is assumed to contain marshalled (term, event_id, count) triplets.
   """
   global __features, __dist, __binarize, __suffix
-   
+
   # We first tally the per-event frequency of each
   # term in our selected feature set.
   term_freq = defaultdict(lambda: defaultdict(int))
@@ -163,7 +165,7 @@ def compute_IG(bucketlist, features, dist, binarize, suffix, job_count=None):
     for i, (t, w) in enumerate(pass_IG_out):
       weights.append(w)
       terms.extend(t)
-      print "processed chunk (%d/%d) [%d terms]" % (i+1, num_chunk, len(t))
+      print("processed chunk (%d/%d) [%d terms]" % (i+1, num_chunk, len(t)))
 
   if binarize:
     weights = numpy.hstack(weights).transpose()
@@ -224,14 +226,14 @@ if __name__ == "__main__":
     weights_path = os.path.join(args.model, 'IGweights' + suffix + ('.bin' if args.binarize else ''))
 
   # display paths
-  print "model path:", args.model 
-  print "buckets path:", bucketlist_path
-  print "features path:", feature_path
-  print "weights path:", weights_path
-  print "index path:", index_path
-  print "suffix:", suffix
+  print("model path:", args.model )
+  print("buckets path:", bucketlist_path)
+  print("features path:", feature_path)
+  print("weights path:", weights_path)
+  print("index path:", index_path)
+  print("suffix:", suffix)
 
-  print "computing information gain"
+  print("computing information gain")
   dist = read_dist(index_path)
   ig = compute_IG(bucketlist, features, dist, args.binarize, suffix, args.jobs)
 

@@ -1,6 +1,8 @@
 #!/usr/bin/env python
+from __future__ import print_function
+
 """
-NBtrain.py - 
+NBtrain.py -
 Model generator for langid.py
 
 Marco Lui, January 2013
@@ -122,7 +124,7 @@ def pass_ptc(b_dir):
   Take a bucket, form a feature map, compute the count of
   each feature in each class.
   @param b_dir path to the bucket directory
-  @returns (read_count, f_ids, prod) 
+  @returns (read_count, f_ids, prod)
   """
   global __cm, __num_instances
 
@@ -181,16 +183,16 @@ def learn_ptc(paths, tk_nextmove, tk_output, cm, temp_path, args):
   b_dirs = [ tempfile.mkdtemp(prefix="train-",suffix='-bucket', dir=temp_path) for i in range(args.buckets) ]
 
   output_states = set(tk_output)
-  
+
   path_chunks = list(chunk(paths, chunksize))
   pass_tokenize_arg = zip(offsets(path_chunks), path_chunks)
-  
-  pass_tokenize_params = (nm_arr, output_states, tk_output, b_dirs) 
+
+  pass_tokenize_params = (nm_arr, output_states, tk_output, b_dirs)
   with MapPool(args.jobs, setup_pass_tokenize, pass_tokenize_params) as f:
     pass_tokenize_out = f(pass_tokenize, pass_tokenize_arg)
 
   write_count = sum(pass_tokenize_out)
-  print "wrote a total of %d keys" % write_count
+  print("wrote a total of %d keys" % write_count)
 
   pass_ptc_params = (cm, num_instances)
   with MapPool(args.jobs, setup_pass_ptc, pass_ptc_params) as f:
@@ -198,7 +200,7 @@ def learn_ptc(paths, tk_nextmove, tk_output, cm, temp_path, args):
 
   reads, ids, prods = zip(*pass_ptc_out)
   read_count = sum(reads)
-  print "read a total of %d keys (%d short)" % (read_count, write_count - read_count)
+  print("read a total of %d keys (%d short)" % (read_count, write_count - read_count))
 
   prod = np.zeros((num_features, cm.shape[1]), dtype=int)
   prod[np.concatenate(ids)] = np.vstack(prods)
@@ -250,11 +252,11 @@ if __name__ == "__main__":
   lang_path = os.path.join(args.model, 'lang_index')
 
   # display paths
-  print "model path:", args.model
-  print "temp path:", temp_path
-  print "scanner path:", scanner_path
+  print("model path:", args.model)
+  print("temp path:", temp_path)
+  print("scanner path:", scanner_path)
   #print "index path:", index_path
-  print "output path:", output_path
+  print("output path:", output_path)
 
   # read list of training files
   with open(index_path) as f:
@@ -269,7 +271,7 @@ if __name__ == "__main__":
   with open(lang_path) as f:
     reader = csv.reader(f)
     langs = zip(*reader)[0]
-    
+
   cm = generate_cm(items, len(langs))
   paths = zip(*items)[1]
 
@@ -282,4 +284,4 @@ if __name__ == "__main__":
   string = base64.b64encode(bz2.compress(cPickle.dumps(model)))
   with open(output_path, 'w') as f:
     f.write(string)
-  print "wrote model to %s (%d bytes)" % (output_path, len(string))
+  print("wrote model to %s (%d bytes)" % (output_path, len(string)))
