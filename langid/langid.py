@@ -176,11 +176,11 @@ class LanguageIdentifier(object):
     z = bz2.decompress(b)
     model = loads(z)
     nb_ptc, nb_pc, nb_classes, tk_nextmove, tk_output = model
-    nb_numfeats = len(nb_ptc) / len(nb_pc)
+    nb_numfeats = int(len(nb_ptc) / len(nb_pc))
 
     # reconstruct pc and ptc
     nb_pc = np.array(nb_pc)
-    nb_ptc = np.array(nb_ptc).reshape(len(nb_ptc)/len(nb_pc), len(nb_pc))
+    nb_ptc = np.array(nb_ptc).reshape(nb_numfeats, len(nb_pc))
    
     return cls(nb_ptc, nb_pc, nb_numfeats, nb_classes, tk_nextmove, tk_output, *args, **kwargs)
 
