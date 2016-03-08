@@ -331,7 +331,7 @@ Available from http://aclweb.org/anthology/P15-2063
 
 Contact
 -------
-Marco Lui <saffsd@gmail.com> http://www.csse.unimelb.edu.au/~mlui
+Marco Lui <saffsd@gmail.com>
 
 I appreciate any feedback, and I'm particularly interested in hearing about 
 places where ``langid.py`` is being used. I would love to know more about 
