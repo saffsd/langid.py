@@ -375,3 +375,6 @@ v1.1.4:
 v1.1.5:
   * remove dev tag
   * add PyPi classifiers, fixing #34 (thanks to pquentin)
+
+v1.1.6:
+  * make nb_numfeats an int, fixes #46, thanks to @remibolcom
