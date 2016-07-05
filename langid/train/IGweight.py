@@ -52,16 +52,14 @@ def entropy(v, axis=0):
   v = numpy.array(v, dtype='float')
   s = numpy.sum(v, axis=axis)
   with numpy.errstate(divide='ignore', invalid='ignore'):
-    rhs = numpy.nansum(v * numpy.log(v), axis=axis) / s
+    log = numpy.nan_to_num(numpy.log(v))
+    rhs = numpy.nansum(v * log, axis=axis) / s
     r = numpy.log(s) - rhs
   # Where dealing with binarized events, it is possible that an event always
   # occurs and thus has 0 information. In this case, the negative class
   # will have frequency 0, resulting in log(0) being computed as nan.
   # We replace these nans with 0
-  nan_index = numpy.isnan(rhs)
-  if nan_index.any():
-    r[nan_index] = 0
-  return r
+  return numpy.nan_to_num(r)
 
 def setup_pass_IG(features, dist, binarize, suffix):
   """
