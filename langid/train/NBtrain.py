@@ -256,6 +256,9 @@ def cleanup():
     shutil.rmtree(outdir)
   except NameError:
     pass
+  except OSError:
+    # sometimes we try to clean up files that are not there
+    pass
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser()

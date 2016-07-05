@@ -113,6 +113,9 @@ def cleanup():
   except NameError:
     # Failed before globals defined, nothing to clean
     pass
+  except OSError:
+    # sometimes we try to clean up files that are not there
+    pass
 
 def setup_pass_tokenize(tokenizer, b_dirs, sample_count, sample_size, term_freq, line_level):
   global __tokenizer, __b_dirs, __sample_count, __sample_size, __term_freq, __line_level
