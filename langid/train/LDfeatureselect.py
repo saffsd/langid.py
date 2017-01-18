@@ -32,7 +32,7 @@ The views and conclusions contained in the software and documentation are those 
 authors and should not be interpreted as representing official policies, either expressed
 or implied, of the copyright holder.
 """
-
+from __future__ import print_function
 ######
 # Default values
 # Can be overriden with command-line options
@@ -91,10 +91,10 @@ if __name__ == "__main__":
   feature_path = args.output if args.output else os.path.join(args.model, 'LDfeats')
 
   # display paths
-  print "model path:", args.model
-  print "lang weights path:", lang_w_path
-  print "domain weights path:", domain_w_path
-  print "feature output path:", feature_path
+  print("model path:", args.model)
+  print("lang weights path:", lang_w_path)
+  print("domain weights path:", domain_w_path)
+  print("feature output path:", feature_path)
 
   lang_w = read_weights(lang_w_path)
   domain_w = read_weights(domain_w_path) if not args.no_domain_ig else None
@@ -108,8 +108,8 @@ if __name__ == "__main__":
       
 
   final_feature_set = reduce(set.union, map(set, features_per_lang.values()))
-  print 'selected %d features' % len(final_feature_set)
+  print('selected %d features' % len(final_feature_set))
 
   write_features(sorted(final_feature_set), feature_path)
-  print 'wrote features to "%s"' % feature_path 
+  print('wrote features to "%s"' % feature_path )
 

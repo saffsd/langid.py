@@ -35,6 +35,7 @@ authors and should not be interpreted as representing official policies, either 
 or implied, of the copyright holder.
 """
 
+from __future__ import print_function
 import cPickle
 import os, sys, argparse 
 import array
@@ -88,7 +89,7 @@ class Scanner(object):
       for p in range(j, len(a)):
         newstate += 1
         goto[(state, a[p])] = newstate
-        #print "(%d, %s) -> %d" % (state, a[p], newstate)
+        #print("(%d, %s) -> %d" % (state, a[p], newstate))
         state = newstate
       output[state].add(a)
     for a in self.alphabet:
@@ -112,7 +113,7 @@ class Scanner(object):
           while (state,a) not in goto:
             state = fail[state]
           fail[s] = goto[(state,a)]
-          #print "f(%d) -> %d" % (s, goto[(state,a)]), output[fail[s]]
+          #print("f(%d) -> %d" % (s, goto[(state,a)]), output[fail[s]])
           if output[fail[s]]:
             output[s].update(output[fail[s]])
 
@@ -190,7 +191,7 @@ def build_scanner(features):
   feat_index = index(features)
 
   # Build the actual scanner
-  print "building scanner"
+  print("building scanner")
   scanner = Scanner(features)
   tk_nextmove, raw_output = scanner.__getstate__()
 
@@ -228,8 +229,8 @@ if __name__ == "__main__":
     output_path = input_path + '.scanner'
 
   # display paths
-  print "input path:", input_path
-  print "output path:", output_path
+  print("input path:", input_path)
+  print("output path:", output_path)
 
   nb_features = read_features(input_path)
   tk_nextmove, tk_output = build_scanner(nb_features)
@@ -237,4 +238,4 @@ if __name__ == "__main__":
 
   with open(output_path, 'w') as f:
     cPickle.dump(scanner, f)
-  print "wrote scanner to {0}".format(output_path)
+  print("wrote scanner to {0}".format(output_path))

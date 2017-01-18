@@ -33,6 +33,8 @@ The views and conclusions contained in the software and documentation are those 
 authors and should not be interpreted as representing official policies, either expressed
 or implied, of the copyright holder.
 """
+from __future__ import print_function
+
 MAX_CHUNK_SIZE = 100 # maximum number of files to tokenize at once
 NUM_BUCKETS = 64 # number of buckets to use in k-v pair generation
 
@@ -164,7 +166,7 @@ def learn_nb_params(items, num_langs, tk_nextmove, tk_output, temp_path, args):
   """
   global outdir
 
-  print "learning NB parameters on {} items".format(len(items))
+  print("learning NB parameters on {} items".format(len(items)))
 
   # Generate the feature map
   nm_arr = mp.Array('i', tk_nextmove, lock=False)
@@ -188,7 +190,7 @@ def learn_nb_params(items, num_langs, tk_nextmove, tk_output, temp_path, args):
   # Divide all the items to be processed into chunks, and enumerate each chunk.
   item_chunks = list(chunk(items, chunksize))
   num_chunks = len(item_chunks)
-  print "about to tokenize {} chunks".format(num_chunks)
+  print("about to tokenize {} chunks".format(num_chunks))
   
   pass_tokenize_arg = enumerate(item_chunks)
   pass_tokenize_params = (nm_arr, output_states, tk_output, b_dirs, args.line) 
@@ -202,12 +204,12 @@ def learn_nb_params(items, num_langs, tk_nextmove, tk_output, temp_path, args):
       write_count += writes
       chunk_sizes[chunk_id] = doc_count
       chunk_labels.append((chunk_id, labels))
-      print "processed chunk ID:{0} ({1}/{2}) [{3} keys]".format(chunk_id, i+1, num_chunks, writes)
+      print("processed chunk ID:{0} ({1}/{2}) [{3} keys]".format(chunk_id, i+1, num_chunks, writes))
 
-  print "wrote a total of %d keys" % write_count
+  print("wrote a total of %d keys" % write_count)
 
   num_instances = sum(chunk_sizes.values())
-  print "processed a total of %d instances" % num_instances
+  print("processed a total of %d instances" % num_instances)
 
   chunk_offsets = {}
   for i in range(len(chunk_sizes)):
@@ -227,11 +229,11 @@ def learn_nb_params(items, num_langs, tk_nextmove, tk_output, temp_path, args):
     def pass_ptc_progress():
       for i,v in enumerate(pass_ptc_out):
         yield v
-        print "processed chunk ({0}/{1})".format(i+1, len(b_dirs))
+        print("processed chunk ({0}/{1})".format(i+1, len(b_dirs)))
 
     reads, ids, prods = zip(*pass_ptc_progress())
     read_count = sum(reads)
-    print "read a total of %d keys (%d short)" % (read_count, write_count - read_count)
+    print("read a total of %d keys (%d short)" % (read_count, write_count - read_count))
 
   num_features = max( i for v in tk_output.values() for i in v) + 1
   prod = np.zeros((num_features, cm.shape[1]), dtype=int)
@@ -292,13 +294,13 @@ if __name__ == "__main__":
   lang_path = os.path.join(args.model, 'lang_index')
 
   # display paths
-  print "model path:", args.model
-  print "temp path:", temp_path
-  print "scanner path:", scanner_path
-  print "output path:", output_path
+  print("model path:", args.model)
+  print("temp path:", temp_path)
+  print("scanner path:", scanner_path)
+  print("output path:", output_path)
 
   if args.line:
-    print "treating each LINE as a document"
+    print("treating each LINE as a document")
 
   # read list of training files
   with open(index_path) as f:
@@ -322,4 +324,4 @@ if __name__ == "__main__":
   string = base64.b64encode(bz2.compress(cPickle.dumps(model)))
   with open(output_path, 'w') as f:
     f.write(string)
-  print "wrote model to %s (%d bytes)" % (output_path, len(string))
+  print("wrote model to %s (%d bytes)" % (output_path, len(string)))

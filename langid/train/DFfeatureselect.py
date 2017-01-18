@@ -37,6 +37,8 @@ or implied, of the copyright holder.
 # Default values
 # Can be overriden with command-line options
 ######
+from __future__ import print_function
+
 MAX_NGRAM_ORDER = 4 # largest order of n-grams to consider
 TOKENS_PER_ORDER = 15000 # number of tokens to consider for each order
 
@@ -89,7 +91,7 @@ def tally(bucketlist, jobs=None):
     pass_sum_df_out = f(pass_sum_df, bucketlist)
 
     for i, keycount in enumerate(pass_sum_df_out):
-      print "processed bucket (%d/%d) [%d keys]" % (i+1, len(bucketlist), keycount)
+      print("processed bucket (%d/%d) [%d keys]" % (i+1, len(bucketlist), keycount))
 
   # build the global term->df mapping
   doc_count = {}
@@ -147,24 +149,24 @@ if __name__ == "__main__":
     bucketlist_path = os.path.join(args.model, 'bucketlist')
 
   # display paths
-  print "buckets path:", bucketlist_path
-  print "features output path:", feature_path
+  print("buckets path:", bucketlist_path)
+  print("features output path:", feature_path)
   if args.tokens_per_order:
-    print "max ngram order:", args.max_order
-    print "tokens per order:", args.tokens_per_order
+    print("max ngram order:", args.max_order)
+    print("tokens per order:", args.tokens_per_order)
   else:
-    print "tokens:", args.tokens
+    print("tokens:", args.tokens)
 
   with open(bucketlist_path) as f:
     bucketlist = map(str.strip, f)
 
   doc_count = tally(bucketlist, args.jobs)
-  print "unique features:", len(doc_count)
+  print("unique features:", len(doc_count))
   if args.doc_count:
     # The constant true is used to indicate output to default location
     doc_count_path = os.path.join(args.model, 'DF_all') if args.doc_count == True else args.doc_count
     write_weights(doc_count, doc_count_path)
-    print "wrote DF counts for all features to:", doc_count_path
+    print("wrote DF counts for all features to:", doc_count_path)
 
   if args.tokens_per_order:
     # Choose a number of features for each length of token
@@ -172,9 +174,9 @@ if __name__ == "__main__":
   else:
     # Choose a number of features overall
     feats = sorted( sorted(doc_count, key=doc_count.get, reverse=True)[:args.tokens] )
-  print "selected features: ", len(feats)
+  print("selected features: ", len(feats))
 
   write_features(feats, feature_path)
-  print 'wrote features to "%s"' % feature_path 
+  print('wrote features to "%s"' % feature_path )
 
   
