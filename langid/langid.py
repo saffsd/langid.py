@@ -212,7 +212,8 @@ class LanguageIdentifier(object):
         # Windows this causes a RuntimeWarning, so we explicitly 
         # suppress it.
         with np.errstate(over='ignore'):
-          pd = (1/np.exp(pd[None,:] - pd[:,None]).sum(1))
+          pd_exp = np.exp(pd)
+          pd = pd_exp / pd_exp.sum()
         return pd
     else:
       def norm_probs(pd):
