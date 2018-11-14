@@ -106,6 +106,24 @@ def classify(instance):
 
   return identifier.classify(instance)
 
+
+def classify_with_language(instance, langs):
+    """
+    Convenience method using a global identifier instance with the default
+    model included in langid.py. Identifies the language that a string is
+    written in.
+
+    @param instance a text string. Unicode strings will automatically be utf8-encoded
+    param langs. Increase the characteristics of the specified language during the run
+    @returns a tuple of the most likely language and the confidence score
+    """
+    global identifier
+    if identifier is None:
+        load_model()
+
+    return identifier.classify_with_language(instance, langs)
+
+
 def rank(instance):
   """
   Convenience method using a global identifier instance with the default
@@ -287,6 +305,11 @@ class LanguageIdentifier(object):
     # compute the partial log-probability of the document in each class
     pd = pdc + self.nb_pc
     return pd
+
+  def classify_with_language(self, text, langs):
+      self.set_languages(langs=langs)
+
+      return self.classify(text)
 
   def classify(self, text):
     """
