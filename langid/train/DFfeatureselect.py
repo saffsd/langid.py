@@ -35,7 +35,7 @@ or implied, of the copyright holder.
 
 ######
 # Default values
-# Can be overriden with command-line options
+# Can be overridden with command-line options
 ######
 MAX_NGRAM_ORDER = 4 # largest order of n-grams to consider
 TOKENS_PER_ORDER = 15000 # number of tokens to consider for each order
