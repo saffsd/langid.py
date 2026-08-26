@@ -78,13 +78,6 @@ More options:
     ('en', 1.0)
 
 
-Note: the Numpy data type for the feature vector has been changed to optimize for speed. If results are inconsistent, try restoring the original setting:
-
-.. code-block:: python
-
-    >>> langid.classify(text, datatype='uint32')
-
-
 On the command-line
 ~~~~~~~~~~~~~~~~~~~
 

@@ -1,5 +1,5 @@
 import json
-
+from io import BytesIO
 from unittest.mock import MagicMock
 
 import pytest
@@ -7,103 +7,73 @@ import pytest
 from py3langid.langid import application
 
 
-@pytest.fixture
-def mock_start_response():
-    return MagicMock()
+def _request(path, method='GET', body=None, query=None, content_length='auto'):
+    """Run a WSGI request and return (status, payload, headers)."""
+    start_response = MagicMock()
+    environ = {'REQUEST_METHOD': method, 'PATH_INFO': path}
+    if query is not None:
+        environ['QUERY_STRING'] = query
+    if body is not None:
+        environ['wsgi.input'] = BytesIO(body)
+        if content_length == 'auto':
+            environ['CONTENT_LENGTH'] = str(len(body))
+        elif content_length is not None:
+            environ['CONTENT_LENGTH'] = content_length
+    response = application(environ, start_response)
+    status = start_response.call_args[0][0]
+    headers = dict(start_response.call_args[0][1])
+    payload = json.loads(response[0].decode('utf-8'))
+    return status, payload, headers
 
-def test_detect_put(mock_start_response):
-    environ = {
-        'REQUEST_METHOD': 'PUT',
-        'CONTENT_LENGTH': 10,
-        'wsgi.input': MagicMock(read=lambda x: b'This is a test'),
-        'PATH_INFO': '/detect'
-    }
-    response = application(environ, mock_start_response)
-    assert mock_start_response.call_args[0][0] == '200 OK'
-    assert json.loads(response[0].decode('utf-8'))['responseData']['language'] == 'en'
 
-def test_detect_get(mock_start_response):
-    environ = {
-        'REQUEST_METHOD': 'GET',
-        'QUERY_STRING': 'q=This+is+a+test',
-        'PATH_INFO': '/detect'
-    }
-    response = application(environ, mock_start_response)
-    assert mock_start_response.call_args[0][0] == '200 OK'
-    assert json.loads(response[0].decode('utf-8'))['responseData']['language'] == 'en'
+@pytest.mark.parametrize('path', ['/detect', '/rank'])
+@pytest.mark.parametrize('method,kwargs', [
+    ('GET', {'query': 'q=This+is+a+test'}),
+    ('POST', {'body': b'q=This+is+a+test'}),
+    ('PUT', {'body': b'This is a test'}),
+])
+def test_ok(path, method, kwargs):
+    status, payload, _ = _request(path, method, **kwargs)
+    assert status == '200 OK'
+    data = payload['responseData']
+    if path == '/detect':
+        assert data['language'] == 'en'
+    else:
+        assert data[0][0] == 'en'
 
-def test_detect_post(mock_start_response):
-    environ = {
-        'REQUEST_METHOD': 'POST',
-        'CONTENT_LENGTH': 10,
-        'wsgi.input': MagicMock(read=lambda x: b'q=Hello+World'),
-        'PATH_INFO': '/detect'
-    }
-    response = application(environ, mock_start_response)
-    assert mock_start_response.call_args[0][0] == '200 OK'
-    assert json.loads(response[0].decode('utf-8'))['responseData']['language'] == 'en'
 
-def test_rank_put(mock_start_response):
-    environ = {
-        'REQUEST_METHOD': 'PUT',
-        'CONTENT_LENGTH': 10,
-        'wsgi.input': MagicMock(read=lambda x: b'Hello World'),
-        'PATH_INFO': '/rank'
-    }
-    response = application(environ, mock_start_response)
-    assert mock_start_response.call_args[0][0] == '200 OK'
-    assert json.loads(response[0].decode('utf-8'))['responseData'] is not None
+def test_invalid_method():
+    status, _, _ = _request('/detect', 'DELETE')
+    assert status == '405 Method Not Allowed'
 
-def test_rank_get(mock_start_response):
-    environ = {
-        'REQUEST_METHOD': 'GET',
-        'QUERY_STRING': 'q=Hello+World',
-        'PATH_INFO': '/rank'
-    }
-    response = application(environ, mock_start_response)
-    assert mock_start_response.call_args[0][0] == '200 OK'
-    assert json.loads(response[0].decode('utf-8'))['responseData'] is not None
 
-def test_rank_post(mock_start_response):
-    environ = {
-        'REQUEST_METHOD': 'POST',
-        'CONTENT_LENGTH': 10,
-        'wsgi.input': MagicMock(read=lambda x: b'q=Hello+World'),
-        'PATH_INFO': '/rank'
-    }
-    response = application(environ, mock_start_response)
-    assert mock_start_response.call_args[0][0] == '200 OK'
-    assert json.loads(response[0].decode('utf-8'))['responseData'] is not None
+@pytest.mark.parametrize('path', ['/invalid', ''])
+def test_invalid_path(path):
+    status, _, _ = _request(path)
+    assert status == '404 Not Found'
 
-def test_invalid_method(mock_start_response):
-    environ = {
-        'REQUEST_METHOD': 'DELETE',
-        'PATH_INFO': '/detect'
-    }
-    response = application(environ, mock_start_response)
-    assert mock_start_response.call_args[0][0] == '405 Method Not Allowed'
 
-def test_invalid_path(mock_start_response):
-    environ = {
-        'REQUEST_METHOD': 'GET',
-        'PATH_INFO': '/invalid'
-    }
-    response = application(environ, mock_start_response)
-    assert mock_start_response.call_args[0][0] == '404 Not Found'
+def test_no_query_string():
+    status, payload, _ = _request('/detect')
+    assert status == '400 Bad Request'
+    assert payload['responseData'] is None
 
-def test_empty_path(mock_start_response):
-    environ = {
-        'REQUEST_METHOD': 'GET',
-        'PATH_INFO': ''
-    }
-    response = application(environ, mock_start_response)
-    assert mock_start_response.call_args[0][0] == '404 Not Found'
 
-def test_no_query_string(mock_start_response):
-    environ = {
-        'REQUEST_METHOD': 'GET',
-        'PATH_INFO': '/detect'
-    }
-    response = application(environ, mock_start_response)
-    assert mock_start_response.call_args[0][0] == '400 Unknown Status'
-    assert json.loads(response[0].decode('utf-8'))['responseData'] is None
+def test_get_missing_q_param():
+    status, _, _ = _request('/detect', query='x=hello')
+    assert status == '400 Bad Request'
+
+
+def test_content_type():
+    _, _, headers = _request('/detect', query='q=test')
+    assert headers['Content-type'] == 'application/json; charset=utf-8'
+
+
+def test_missing_content_length():
+    status, _, _ = _request('/detect', 'POST', body=b'q=test', content_length=None)
+    assert status == '400 Bad Request'
+
+
+def test_invalid_content_length():
+    status, _, _ = _request('/detect', 'POST', body=b'q=test', content_length='abc')
+    assert status == '400 Bad Request'
